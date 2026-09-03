@@ -5,7 +5,10 @@ from .jin_hilla_environment_core import JinHillaState, ScytheCycle, SoulState
 
 
 class JinHillaScenarioEnv:
-    """M8 Jin Hilla training scenario with lane hazards and PBRS rewards."""
+    """M8 Jin Hilla training scenario with numeric policy observations."""
+
+    observation_size = 7
+    action_size = 4
 
     def __init__(
         self,
@@ -25,12 +28,16 @@ class JinHillaScenarioEnv:
         self.altar_lane = 0
         self.altar_active = False
         self.web_hits = 0
+        self.cleanse_count = 0
+        self.dodge_count = 0
         self.state: JinHillaState | None = None
         self._reset_state()
 
     def _reset_state(self) -> None:
         self.step_count = 0
         self.web_hits = 0
+        self.cleanse_count = 0
+        self.dodge_count = 0
         self.player_lane = self.rng.randint(0, self.num_lanes - 1)
         self.hazard_lane = self.rng.randint(0, self.num_lanes - 1)
         while self.hazard_lane == self.player_lane:
@@ -50,11 +57,23 @@ class JinHillaScenarioEnv:
             raise RuntimeError("call reset() before interacting with the environment")
         return self.state
 
-    def reset(self) -> Dict[str, Any]:
+    def reset(self) -> list[float]:
         self._reset_state()
         return self._get_observation()
 
-    def _get_observation(self) -> Dict[str, Any]:
+    def _get_observation(self) -> list[float]:
+        state = self._require_state()
+        return [
+            self.player_lane / (self.num_lanes - 1),
+            self.hazard_lane / (self.num_lanes - 1),
+            self.altar_lane / (self.num_lanes - 1),
+            float(self.altar_active),
+            state.souls.green / 5.0,
+            state.souls.red / 5.0,
+            self.step_count / self.max_steps,
+        ]
+
+    def _info(self) -> Dict[str, Any]:
         state = self._require_state()
         return {
             "player_lane": self.player_lane,
@@ -64,6 +83,9 @@ class JinHillaScenarioEnv:
             "step_count": self.step_count,
             "green_skulls": state.souls.green,
             "red_skulls": state.souls.red,
+            "web_hits": self.web_hits,
+            "cleanse_count": self.cleanse_count,
+            "dodge_count": self.dodge_count,
         }
 
     def _potential(self, player_lane: int, altar_lane: int, altar_active: bool) -> float:
@@ -71,12 +93,11 @@ class JinHillaScenarioEnv:
             return 0.0
         return 2.0 / (abs(player_lane - altar_lane) + 1)
 
-    def step(self, action: int) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]:
+    def step(self, action: int) -> Tuple[list[float], float, bool, bool, Dict[str, Any]]:
         if action not in (0, 1, 2, 3):
             raise ValueError(f"unknown action: {action}")
         state = self._require_state()
         reward = 0.0
-        info: Dict[str, Any] = {}
         prev_potential = self._potential(self.player_lane, self.altar_lane, self.altar_active)
 
         if action == 0:
@@ -91,17 +112,19 @@ class JinHillaScenarioEnv:
             self.web_hits += 1
             reward -= 5.0
         else:
+            self.dodge_count += 1
             reward += 1.0
 
         if action == 3:
             if self.altar_active and abs(self.player_lane - self.altar_lane) <= 1:
                 cleaned = state.harvest_altar(presses=10)
-                if cleaned:
-                    reward += 10.0 * cleaned
+                self.cleanse_count += cleaned
+                reward += 10.0 * cleaned
             else:
                 reward -= 0.1
             self.altar_active = state.altar_present
-            self.altar_lane = state.altar_lane if state.altar_lane is not None else self.altar_lane
+            if state.altar_lane is not None:
+                self.altar_lane = state.altar_lane
 
         curr_potential = self._potential(self.player_lane, self.altar_lane, self.altar_active)
         reward += 0.99 * curr_potential - prev_potential
@@ -119,6 +142,7 @@ class JinHillaScenarioEnv:
 
         terminated = state.terminated
         truncated = self.step_count >= self.max_steps
+        info = self._info()
         if terminated:
             info["termination_reason"] = state.termination_reason
         if truncated:
