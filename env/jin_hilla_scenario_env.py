@@ -1,87 +1,144 @@
-from __future__ import annotations
-
 import random
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict, Tuple
 
-from env.jin_hilla_training_env import Action, JinHillaTrainingEnv
-
-
-@dataclass(frozen=True)
-class ScenarioConfig:
-    altar_interval: int = 45
-    hazard_interval: int = 12
-    max_steps: int = 360
-    lane_count: int = 7
+from .jin_hilla_environment_core import JinHillaEnvironmentCore, RewardConfig
 
 
 class JinHillaScenarioEnv:
-    """Seeded training scenarios layered over the M8 rules environment.
-
-    Hazard lanes are observed before an action. A web hit occurs only when the
-    player remains in that lane, so survival and altar choices are learnable.
+    """
+    M8 진힐라 학습용 시나리오 환경.
+    
+    - 7 레인 이산 공간
+    - hazard_interval=12, altar_interval=45, max_steps=360
+    - 위험 레인과 제단 레인은 재현 가능한 난수 시드로 생성
+    - 이 값들과 7-레인 모델은 실제 진힐라 규칙이 아니라 학습용 fixture
     """
 
-    action_size = len(Action)
+    def __init__(
+        self,
+        seed: int = 7,
+        hazard_interval: int = 12,
+        altar_interval: int = 45,
+        max_steps: int = 360,
+    ):
+        self.rng = random.Random(seed)
+        self.hazard_interval = hazard_interval
+        self.altar_interval = altar_interval
+        self.max_steps = max_steps
 
-    def __init__(self, config: ScenarioConfig = ScenarioConfig()) -> None:
-        self.config = config
-        self.core = JinHillaTrainingEnv(
-            lane_count=config.lane_count,
-            max_steps=config.max_steps,
-        )
-        self.rng = random.Random()
-        self.steps = 0
-        self.next_hazard_lane: int | None = None
-        self.altar_spawns = 0
-        self.cleanse_count = 0
-        self.web_hits = 0
+        self.core = JinHillaEnvironmentCore()
 
-    @property
-    def observation_size(self) -> int:
-        return self.core.observation_size + 2
+        # 7 레인
+        self.num_lanes = 7
 
-    def reset(self, *, seed: int | None = None) -> tuple[list[float], dict[str, Any]]:
-        self.rng.seed(seed)
-        self.steps = 0
-        self.altar_spawns = self.cleanse_count = self.web_hits = 0
-        self.next_hazard_lane = self._draw_hazard_lane()
-        _, info = self.core.reset(options={"player_lane": self.config.lane_count // 2})
-        return self.observation(), {**info, **self.metrics()}
+        # 상태
+        self.step_count = 0
+        self.player_lane = 0
+        self.hazard_lane = 0
+        self.altar_lane = 0
+        self.altar_active = False
 
-    def step(self, action: int) -> tuple[list[float], float, bool, bool, dict[str, Any]]:
-        state = self.core._require_state()
-        old_red = state.souls.red
-        hazard_now = self.next_hazard_lane
-        _, reward, terminated, truncated, _ = self.core.step(action)
-        self.steps += 1
+        self._reset_state()
 
-        if hazard_now is not None and state.player_lane == hazard_now and not terminated:
-            self.core.apply_web_hit()
-            self.web_hits += 1
-            reward -= self.core.reward_config.web_hit
-            terminated = state.terminated
-            if terminated:
-                reward += self.core.reward_config.defeat
-        if state.souls.red < old_red:
-            self.cleanse_count += old_red - state.souls.red
+    def _reset_state(self):
+        self.step_count = 0
+        self.player_lane = self.rng.randint(0, self.num_lanes - 1)
+        # 위험 레인은 플레이어와 다르게
+        hazard_candidate = self.rng.randint(0, self.num_lanes - 1)
+        while hazard_candidate == self.player_lane:
+            hazard_candidate = self.rng.randint(0, self.num_lanes - 1)
+        self.hazard_lane = hazard_candidate
 
-        if self.steps % self.config.altar_interval == 0 and not state.altar_present:
-            self.core.spawn_altar(self.rng.randrange(self.config.lane_count))
-            self.altar_spawns += 1
-        self.next_hazard_lane = self._draw_hazard_lane()
-        truncated = truncated or self.steps >= self.config.max_steps
-        return self.observation(), reward, terminated, truncated, {**self.core.info(), **self.metrics()}
+        # 제단 레인
+        self.altar_lane = self.rng.randint(0, self.num_lanes - 1)
+        self.altar_active = True
 
-    def observation(self) -> list[float]:
-        hazard = -1.0 if self.next_hazard_lane is None else self.next_hazard_lane / (self.config.lane_count - 1)
-        until_hazard = self.config.hazard_interval - (self.steps % self.config.hazard_interval)
-        return self.core.observation() + [hazard, until_hazard / self.config.hazard_interval]
+        self.core.reset()
 
-    def metrics(self) -> dict[str, int]:
-        return {"scenario_steps": self.steps, "web_hits": self.web_hits, "cleanse_count": self.cleanse_count, "altar_spawns": self.altar_spawns}
+    def reset(self) -> Dict[str, Any]:
+        self._reset_state()
+        return self._get_observation()
 
-    def _draw_hazard_lane(self) -> int | None:
-        if self.steps % self.config.hazard_interval == 0:
-            return self.rng.randrange(self.config.lane_count)
-        return None
+    def _get_observation(self) -> Dict[str, Any]:
+        return {
+            "player_lane": self.player_lane,
+            "hazard_lane": self.hazard_lane,
+            "altar_lane": self.altar_lane,
+            "altar_active": self.altar_active,
+            "step_count": self.step_count,
+            "green_skulls": self.core.green_skulls,
+            "red_skulls": self.core.red_skulls,
+        }
+
+    def step(self, action: int) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]:
+        """
+        action: 0=LEFT, 1=STAY, 2=RIGHT, 3=HARVEST
+        """
+        reward = 0.0
+        info: Dict[str, Any] = {}
+
+        # 1. 플레이어 이동 처리
+        if action == 0:  # LEFT
+            self.player_lane = max(0, self.player_lane - 1)
+        elif action == 2:  # RIGHT
+            self.player_lane = min(self.num_lanes - 1, self.player_lane + 1)
+        # STAY, HARVEST 는 레인 변경 없음
+
+        # 2. 한 스텝 생존 보상 (소량)
+        reward += 0.05
+
+        # 3. 위험 레인 처리
+        hazard_now = self.hazard_lane
+        if hazard_now is not None:
+            if self.player_lane == hazard_now:
+                # 피격: 핵심 버그 수정 - 명시적 패널티
+                self.core.apply_web_hit()
+                reward -= 5.0
+            else:
+                # 회피 보상
+                reward += 1.0
+
+        # 4. 제단 정화 처리 (HARVEST 행동)
+        if action == 3:  # HARVEST
+            if self.altar_active:
+                # 제단 레인에서 1 레인 이내면 정화 가능
+                if abs(self.player_lane - self.altar_lane) <= 1:
+                    cleansed = self.core.attempt_cleanse()
+                    if cleansed:
+                        reward += 10.0
+                else:
+                    # 정화 불가 상태의 HARVEST: 작은 패널티
+                    reward -= 0.1
+            else:
+                # 제단이 없으면 HARVEST 는 무의미
+                reward -= 0.1
+
+        # 5. 스텝 카운트 증가
+        self.step_count += 1
+
+        # 6. 위험/제단 레인 업데이트 (주기적)
+        if self.step_count % self.hazard_interval == 0:
+            # 새 위험 레인
+            new_hazard = self.rng.randint(0, self.num_lanes - 1)
+            while new_hazard == self.player_lane:
+                new_hazard = self.rng.randint(0, self.num_lanes - 1)
+            self.hazard_lane = new_hazard
+
+        if self.step_count % self.altar_interval == 0:
+            # 제단 재배치
+            self.altar_lane = self.rng.randint(0, self.num_lanes - 1)
+            self.altar_active = True
+
+        # 7. 종료 조건
+        terminated = False
+        truncated = False
+
+        if self.core.red_skulls > self.core.green_skulls:
+            terminated = True
+            info["termination_reason"] = "red_exceeds_green"
+
+        if self.step_count >= self.max_steps:
+            truncated = True
+            info["truncation_reason"] = "max_steps"
+
+        return self._get_observation(), reward, terminated, truncated, info
