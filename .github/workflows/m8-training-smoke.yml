@@ -1,0 +1,37 @@
+name: M8 training smoke gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  train-and-evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-colab.txt ]; then python -m pip install -r requirements-colab.txt; elif [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+      - name: Run one-episode training smoke test
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/train.py --episodes 1 --output smoke_artifacts
+          test -f smoke_artifacts/m8_policy.pt
+          test -f smoke_artifacts/train_metrics.json
+      - name: Run one-episode evaluation smoke test
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/evaluate.py --checkpoint smoke_artifacts/m8_policy.pt --episodes 1 --output smoke_artifacts/evaluation.json
+          test -f smoke_artifacts/evaluation.json
