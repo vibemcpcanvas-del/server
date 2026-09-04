@@ -8,18 +8,22 @@ from .jin_hilla_environment_core import JinHillaState, ScytheCycle, SoulState, S
 class JinHillaScenarioEnv:
     """M8 Jin Hilla training scenario with numeric policy observations.
 
-    This environment models altar spawning based on Jin Hilla's soul slash pattern:
-    - At the start of each soul slash (ScythePhase.SPREAD_ART), the number of hits
-      required to spawn an altar is set to ceil(green_skulls / 2).
-    - The very first threshold is also activated immediately at reset() so that
-      episodes which end before the first in-fight soul slash (e.g. due to early
-      deaths) still have a chance to spawn an altar. Without this, episodes with
-      short average survival never reach the first SPREAD_ART tick and altar
-      spawning becomes impossible for the entire episode.
-    - If green_skulls <= 1 at threshold-activation time, altar spawning becomes
-      impossible until the next soul slash.
-    - Each web hit during the cycle counts toward this threshold; once reached,
-      a single altar is spawned.
+    Altar spawning rule (deviates intentionally from the real-game formula):
+    - The real MapleStory formula is ceil(green_skulls / 2) hits to spawn an
+      altar. Under this simulator's simplified defeat rule (defeated when
+      red_skulls > green_skulls), that exact formula coincides with the lethal
+      hit for every ODD starting skull count (5, 3, 1): the hit that spawns the
+      altar is the SAME hit that ends the episode, making cleansing
+      structurally impossible no matter how good the policy is.
+    - To keep training meaningful, this simulator instead uses
+      max(1, green_skulls // 2), which guarantees at least a one-hit buffer
+      between the altar-spawning hit and the lethal hit for every starting
+      skull count. This is a disclosed fixture deviation, not the real game
+      rule.
+    - If green_skulls <= 1 when the threshold is (re)activated, altar spawning
+      is impossible until the next soul slash.
+    - Each web hit during the cycle counts toward this threshold; once
+      reached, a single altar is spawned.
     """
 
     observation_size = 7
@@ -72,11 +76,9 @@ class JinHillaScenarioEnv:
             altar_lane=None,
             player_lane=self.player_lane,
         )
-        # Activate the first altar threshold immediately. Without this, episodes
-        # that end (red exceeds green) before the scythe cycle's first
-        # SPREAD_ART tick (30 + 15 = 45 steps) never get a chance to spawn an
-        # altar at all, making cleanse_count structurally zero regardless of
-        # policy quality.
+        # Activate the first altar threshold immediately so episodes that end
+        # before the scythe cycle's first SPREAD_ART tick (30 + 15 = 45 steps)
+        # still get a chance to spawn an altar.
         self._on_soul_slash()
 
     def _require_state(self) -> JinHillaState:
@@ -125,9 +127,10 @@ class JinHillaScenarioEnv:
     def _on_soul_slash(self) -> None:
         """Update altar spawning rules at the start of a soul slash cycle.
 
-        Called both immediately at reset (to cover episodes that end before the
-        first in-cycle SPREAD_ART tick) and whenever the scythe cycle enters the
-        SPREAD_ART phase during play.
+        Uses max(1, green // 2) instead of the real-game ceil(green / 2) to
+        guarantee at least a one-hit buffer before the lethal hit under this
+        simulator's simplified defeat rule (red_skulls > green_skulls). See
+        the class docstring for the full rationale.
         """
         state = self._require_state()
         self.hits_since_soul_slash = 0
@@ -137,8 +140,7 @@ class JinHillaScenarioEnv:
             self.altar_hits_needed = None
             return
         self.can_spawn_altar = True
-        # ceil(green / 2): 5 -> 3, 4 -> 2, 3 -> 2, 2 -> 1
-        self.altar_hits_needed = math.ceil(green / 2)
+        self.altar_hits_needed = max(1, green // 2)
 
     def _register_hit_for_altar(self) -> None:
         """Register a web hit and spawn altar when the threshold is reached."""
@@ -161,7 +163,6 @@ class JinHillaScenarioEnv:
         reward = 0.0
         prev_potential = self._potential(self.player_lane, self.altar_lane, self.altar_active)
 
-        # Advance scythe cycle and update soul slash/altar rules when SPREAD_ART begins.
         phase_change = state.tick()
         if phase_change is ScythePhase.SPREAD_ART:
             self._on_soul_slash()

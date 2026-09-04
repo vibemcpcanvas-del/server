@@ -73,44 +73,46 @@ class JinHillaScenarioAltarRuleTests(unittest.TestCase):
         return env, state
 
     def test_altar_hits_needed_mapping(self):
+        # max(1, green // 2): a disclosed deviation from the real-game
+        # ceil(green / 2) formula, needed to guarantee a one-hit buffer
+        # before the lethal hit under this simulator's simplified defeat rule.
         env, _ = self._prepare_env(5)
-        self.assertEqual(env.altar_hits_needed, 3)
+        self.assertEqual(env.altar_hits_needed, 2)
         env, _ = self._prepare_env(4)
         self.assertEqual(env.altar_hits_needed, 2)
         env, _ = self._prepare_env(3)
-        self.assertEqual(env.altar_hits_needed, 2)
+        self.assertEqual(env.altar_hits_needed, 1)
         env, _ = self._prepare_env(2)
         self.assertEqual(env.altar_hits_needed, 1)
 
-    def test_altar_spawns_after_required_hits_for_5_green(self):
+    def test_altar_spawns_before_lethal_hit_for_5_green(self):
         env, state = self._prepare_env(5)
         self.assertFalse(env.altar_active)
-        for _ in range(2):
-            env._register_hit_for_altar()
-            self.assertFalse(env.altar_active)
+        env._register_hit_for_altar()
+        self.assertFalse(env.altar_active)
         env._register_hit_for_altar()
         self.assertTrue(env.altar_active)
+        self.assertFalse(state.terminated)
         self.assertTrue(state.altar_present)
         self.assertIsNotNone(state.altar_lane)
 
-    def test_altar_spawns_after_required_hits_for_3_and_4_green(self):
+    def test_altar_spawns_before_lethal_hit_for_3_and_4_green(self):
         for green in (3, 4):
             env, state = self._prepare_env(green)
-            for _ in range(1):
+            needed = env.altar_hits_needed
+            for _ in range(needed - 1):
                 env._register_hit_for_altar()
                 self.assertFalse(env.altar_active)
             env._register_hit_for_altar()
             self.assertTrue(env.altar_active)
-            self.assertTrue(state.altar_present)
-            self.assertIsNotNone(state.altar_lane)
+            self.assertFalse(state.terminated)
 
-    def test_altar_spawns_after_single_hit_for_2_green(self):
+    def test_altar_spawns_before_lethal_hit_for_2_green(self):
         env, state = self._prepare_env(2)
         self.assertFalse(env.altar_active)
         env._register_hit_for_altar()
         self.assertTrue(env.altar_active)
-        self.assertTrue(state.altar_present)
-        self.assertIsNotNone(state.altar_lane)
+        self.assertFalse(state.terminated)
 
     def test_altar_never_spawns_for_one_green(self):
         env, state = self._prepare_env(1)
@@ -122,21 +124,21 @@ class JinHillaScenarioAltarRuleTests(unittest.TestCase):
         self.assertFalse(state.altar_present)
 
     def test_altar_threshold_is_active_immediately_after_reset(self):
-        """Regression test: episodes that end before the first in-cycle
-        SPREAD_ART tick must still have an active altar threshold, otherwise
-        cleanse_count is structurally zero for the entire episode."""
         env = JinHillaScenarioEnv()
         env.reset()
         self.assertIsNotNone(env.altar_hits_needed)
-        self.assertEqual(env.altar_hits_needed, 3)  # ceil(5 / 2)
+        self.assertEqual(env.altar_hits_needed, 2)  # max(1, 5 // 2)
         self.assertTrue(env.can_spawn_altar)
 
-    def test_altar_can_spawn_within_first_three_hits_after_reset(self):
+    def test_altar_spawns_with_margin_before_death_after_reset(self):
+        """Regression test: the altar must spawn strictly before the lethal
+        hit so a policy has at least one step of opportunity to harvest it."""
         env = JinHillaScenarioEnv()
-        env.reset()
-        for _ in range(2):
-            env._register_hit_for_altar()
-            self.assertFalse(env.altar_active)
+        state = env.reset() and env._require_state()
+        state = env._require_state()
+        env._register_hit_for_altar()
+        state.apply_web_hit()
+        self.assertFalse(state.terminated)
         env._register_hit_for_altar()
         self.assertTrue(env.altar_active)
 
