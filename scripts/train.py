@@ -39,6 +39,7 @@ def git_commit() -> str:
 def run_episode(env: JinHillaScenarioEnv, policy: Policy, device: torch.device, seed: int, train: bool):
     observation = env.reset()
     log_probs, rewards, entropies = [], [], []
+    info = {}
     while True:
         x = torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0)
         logits = policy(x)
@@ -65,7 +66,10 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     env = JinHillaScenarioEnv()
-    policy = Policy(env.observation_size if hasattr(env, "observation_size") else 7, env.action_size if hasattr(env, "action_size") else 4).to(device)
+    policy = Policy(
+        env.observation_size if hasattr(env, "observation_size") else 7,
+        env.action_size if hasattr(env, "action_size") else 4,
+    ).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
 
     returns = []
@@ -74,7 +78,22 @@ def main() -> None:
     entropy_coef = 0.02
 
     for episode in range(args.episodes):
-        log_probs, rewards, entropies, _, _ = run_episode(env, policy, device, args.seed + episode, True)
+        log_probs, rewards, entropies, info, _ = run_episode(env, policy, device, args.seed + episode, True)
+
+        # 에피소드-level 보상 형태화 (알파스타식 다목적 최적화 축소판)
+        if rewards:
+            termination_reason = info.get("termination_reason")
+            cleanse_count = info.get("cleanse_count", 0)
+
+            # 빨강 해골 초과 종료 에피소드에 추가 패널티
+            if termination_reason == "red_skulls_exceed_green_skulls":
+                rewards[-1] -= 10.0
+
+            # 정화를 한 번이라도 성공한 에피소드 보상, 그렇지 않으면 소량 패널티
+            if cleanse_count > 0:
+                rewards[-1] += 5.0
+            else:
+                rewards[-1] -= 2.0
 
         discounted, running = [], 0.0
         for reward in reversed(rewards):
@@ -107,11 +126,14 @@ def main() -> None:
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     checkpoint = output / "m8_policy.pt"
-    torch.save({
-        "state_dict": policy.state_dict(),
-        "observation_size": env.observation_size if hasattr(env, "observation_size") else 7,
-        "action_size": env.action_size if hasattr(env, "action_size") else 4,
-    }, checkpoint)
+    torch.save(
+        {
+            "state_dict": policy.state_dict(),
+            "observation_size": env.observation_size if hasattr(env, "observation_size") else 7,
+            "action_size": env.action_size if hasattr(env, "action_size") else 4,
+        },
+        checkpoint,
+    )
 
     metrics = {
         "git_commit": git_commit(),
