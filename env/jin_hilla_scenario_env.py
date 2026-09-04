@@ -24,6 +24,14 @@ class JinHillaScenarioEnv:
       is impossible until the next soul slash.
     - Each web hit during the cycle counts toward this threshold; once
       reached, a single altar is spawned.
+
+    Hazard-avoidance shaping:
+    - In addition to the sparse +1 dodge / -5 hit reward, a potential-based
+      shaping term rewards keeping distance from the current hazard lane.
+      Without this, the only signal a policy gets about the hazard is after
+      the fact (already hit or already safe this step), which gave no
+      gradient toward proactively moving away. This mirrors the existing
+      altar-distance PBRS term.
     """
 
     observation_size = 7
@@ -119,10 +127,21 @@ class JinHillaScenarioEnv:
             "hits_since_soul_slash": self.hits_since_soul_slash,
         }
 
-    def _potential(self, player_lane: int, altar_lane: int, altar_active: bool) -> float:
+    def _altar_potential(self, player_lane: int, altar_lane: int, altar_active: bool) -> float:
         if not altar_active:
             return 0.0
         return 2.0 / (abs(player_lane - altar_lane) + 1)
+
+    def _hazard_potential(self, player_lane: int, hazard_lane: int) -> float:
+        """Higher (less negative) when farther from the hazard lane.
+
+        This gives a dense, directional signal that rewards proactively
+        moving away from danger, instead of only reacting after a hit
+        already happened.
+        """
+        distance = abs(player_lane - hazard_lane)
+        max_distance = self.num_lanes - 1
+        return -1.0 * (max_distance - distance) / max_distance
 
     def _on_soul_slash(self) -> None:
         """Update altar spawning rules at the start of a soul slash cycle.
@@ -161,7 +180,8 @@ class JinHillaScenarioEnv:
             raise ValueError(f"unknown action: {action}")
         state = self._require_state()
         reward = 0.0
-        prev_potential = self._potential(self.player_lane, self.altar_lane, self.altar_active)
+        prev_altar_potential = self._altar_potential(self.player_lane, self.altar_lane, self.altar_active)
+        prev_hazard_potential = self._hazard_potential(self.player_lane, self.hazard_lane)
 
         phase_change = state.tick()
         if phase_change is ScythePhase.SPREAD_ART:
@@ -194,8 +214,10 @@ class JinHillaScenarioEnv:
             if state.altar_lane is not None:
                 self.altar_lane = state.altar_lane
 
-        curr_potential = self._potential(self.player_lane, self.altar_lane, self.altar_active)
-        reward += 0.99 * curr_potential - prev_potential
+        curr_altar_potential = self._altar_potential(self.player_lane, self.altar_lane, self.altar_active)
+        curr_hazard_potential = self._hazard_potential(self.player_lane, self.hazard_lane)
+        reward += 0.99 * curr_altar_potential - prev_altar_potential
+        reward += 0.99 * curr_hazard_potential - prev_hazard_potential
         self.step_count += 1
 
         if self.step_count % self.hazard_interval == 0:
