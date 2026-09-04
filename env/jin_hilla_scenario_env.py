@@ -1,11 +1,21 @@
 import random
+import math
 from typing import Any, Dict, Tuple
 
-from .jin_hilla_environment_core import JinHillaState, ScytheCycle, SoulState
+from .jin_hilla_environment_core import JinHillaState, ScytheCycle, SoulState, ScythePhase
 
 
 class JinHillaScenarioEnv:
-    """M8 Jin Hilla training scenario with numeric policy observations."""
+    """M8 Jin Hilla training scenario with numeric policy observations.
+
+    This environment models altar spawning based on Jin Hilla's soul slash pattern:
+    - At the start of each soul slash (ScythePhase.SPREAD_ART), the number of hits
+      required to spawn an altar is set to ceil(green_skulls / 2).
+    - If green_skulls <= 1 at that moment, altar spawning becomes impossible
+      until the next soul slash.
+    - Each web hit during the cycle counts toward this threshold; once reached,
+      a single altar is spawned.
+    """
 
     observation_size = 7
     action_size = 4
@@ -31,6 +41,9 @@ class JinHillaScenarioEnv:
         self.cleanse_count = 0
         self.dodge_count = 0
         self.state: JinHillaState | None = None
+        self.altar_hits_needed: int | None = None
+        self.hits_since_soul_slash: int = 0
+        self.can_spawn_altar: bool = True
         self._reset_state()
 
     def _reset_state(self) -> None:
@@ -43,12 +56,15 @@ class JinHillaScenarioEnv:
         while self.hazard_lane == self.player_lane:
             self.hazard_lane = self.rng.randint(0, self.num_lanes - 1)
         self.altar_lane = self.rng.randint(0, self.num_lanes - 1)
-        self.altar_active = True
+        self.altar_active = False
+        self.altar_hits_needed = None
+        self.hits_since_soul_slash = 0
+        self.can_spawn_altar = True
         self.state = JinHillaState(
             souls=SoulState(green=5, red=0),
             scythe=ScytheCycle(30, 15, 20),
-            altar_present=True,
-            altar_lane=self.altar_lane,
+            altar_present=False,
+            altar_lane=None,
             player_lane=self.player_lane,
         )
 
@@ -93,12 +109,47 @@ class JinHillaScenarioEnv:
             return 0.0
         return 2.0 / (abs(player_lane - altar_lane) + 1)
 
+    def _on_soul_slash(self) -> None:
+        """Update altar spawning rules at the start of a soul slash cycle.
+
+        Called when the scythe cycle enters the SPREAD_ART phase.
+        """
+        state = self._require_state()
+        self.hits_since_soul_slash = 0
+        green = state.souls.green
+        if green <= 1:
+            self.can_spawn_altar = False
+            self.altar_hits_needed = None
+            return
+        self.can_spawn_altar = True
+        # ceil(green / 2): 5 -> 3, 4 -> 2, 3 -> 2, 2 -> 1
+        self.altar_hits_needed = math.ceil(green / 2)
+
+    def _register_hit_for_altar(self) -> None:
+        """Register a web hit and spawn altar when the threshold is reached."""
+        if not self.can_spawn_altar or self.altar_hits_needed is None or self.altar_active:
+            return
+        self.hits_since_soul_slash += 1
+        if self.hits_since_soul_slash < self.altar_hits_needed:
+            return
+        # Spawn a single altar for this cycle.
+        self.altar_lane = self.rng.randint(0, self.num_lanes - 1)
+        self.altar_active = True
+        state = self._require_state()
+        state.altar_present = True
+        state.altar_lane = self.altar_lane
+
     def step(self, action: int) -> Tuple[list[float], float, bool, bool, Dict[str, Any]]:
         if action not in (0, 1, 2, 3):
             raise ValueError(f"unknown action: {action}")
         state = self._require_state()
         reward = 0.0
         prev_potential = self._potential(self.player_lane, self.altar_lane, self.altar_active)
+
+        # Advance scythe cycle and update soul slash/altar rules when SPREAD_ART begins.
+        phase_change = state.tick()
+        if phase_change is ScythePhase.SPREAD_ART:
+            self._on_soul_slash()
 
         if action == 0:
             self.player_lane = max(0, self.player_lane - 1)
@@ -111,6 +162,7 @@ class JinHillaScenarioEnv:
             state.apply_web_hit()
             self.web_hits += 1
             reward -= 5.0
+            self._register_hit_for_altar()
         else:
             self.dodge_count += 1
             reward += 1.0
@@ -134,11 +186,6 @@ class JinHillaScenarioEnv:
             self.hazard_lane = self.rng.randint(0, self.num_lanes - 1)
             while self.hazard_lane == self.player_lane:
                 self.hazard_lane = self.rng.randint(0, self.num_lanes - 1)
-        if self.step_count % self.altar_interval == 0:
-            self.altar_lane = self.rng.randint(0, self.num_lanes - 1)
-            self.altar_active = True
-            state.altar_present = True
-            state.altar_lane = self.altar_lane
 
         terminated = state.terminated
         truncated = self.step_count >= self.max_steps
