@@ -79,8 +79,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--output", default="artifacts_m8_v2")
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--entropy-coef-start", type=float, default=0.02)
-    parser.add_argument("--entropy-coef-end", type=float, default=0.002)
+    parser.add_argument("--entropy-coef-start", type=float, default=0.05)
+    parser.add_argument("--entropy-coef-end", type=float, default=0.01)
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -127,11 +127,11 @@ def main() -> None:
                 termination_reason = info.get("termination_reason")
                 cleanse_count = info.get("cleanse_count", 0)
                 if termination_reason == "red_skulls_exceed_green_skulls":
-                    rewards[-1] -= 10.0
+                    rewards[-1] -= 25.0
                 if cleanse_count > 0:
-                    rewards[-1] += 5.0
+                    rewards[-1] += 20.0 * cleanse_count
                 else:
-                    rewards[-1] -= 2.0
+                    rewards[-1] -= 5.0
 
             discounted = discount_rewards(rewards)
             returns_tensor = torch.tensor(discounted, dtype=torch.float32, device=device)

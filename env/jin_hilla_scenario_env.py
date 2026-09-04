@@ -40,8 +40,8 @@ class JinHillaScenarioEnv:
     def __init__(
         self,
         seed: int = 7,
-        hazard_interval: int = 12,
-        altar_interval: int = 45,
+        hazard_interval: int = 16,
+        altar_interval: int = 30,
         max_steps: int = 360,
     ) -> None:
         self.rng = random.Random(seed)
