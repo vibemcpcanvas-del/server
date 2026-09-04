@@ -11,8 +11,13 @@ class JinHillaScenarioEnv:
     This environment models altar spawning based on Jin Hilla's soul slash pattern:
     - At the start of each soul slash (ScythePhase.SPREAD_ART), the number of hits
       required to spawn an altar is set to ceil(green_skulls / 2).
-    - If green_skulls <= 1 at that moment, altar spawning becomes impossible
-      until the next soul slash.
+    - The very first threshold is also activated immediately at reset() so that
+      episodes which end before the first in-fight soul slash (e.g. due to early
+      deaths) still have a chance to spawn an altar. Without this, episodes with
+      short average survival never reach the first SPREAD_ART tick and altar
+      spawning becomes impossible for the entire episode.
+    - If green_skulls <= 1 at threshold-activation time, altar spawning becomes
+      impossible until the next soul slash.
     - Each web hit during the cycle counts toward this threshold; once reached,
       a single altar is spawned.
     """
@@ -67,6 +72,12 @@ class JinHillaScenarioEnv:
             altar_lane=None,
             player_lane=self.player_lane,
         )
+        # Activate the first altar threshold immediately. Without this, episodes
+        # that end (red exceeds green) before the scythe cycle's first
+        # SPREAD_ART tick (30 + 15 = 45 steps) never get a chance to spawn an
+        # altar at all, making cleanse_count structurally zero regardless of
+        # policy quality.
+        self._on_soul_slash()
 
     def _require_state(self) -> JinHillaState:
         if self.state is None:
@@ -102,6 +113,8 @@ class JinHillaScenarioEnv:
             "web_hits": self.web_hits,
             "cleanse_count": self.cleanse_count,
             "dodge_count": self.dodge_count,
+            "altar_hits_needed": self.altar_hits_needed,
+            "hits_since_soul_slash": self.hits_since_soul_slash,
         }
 
     def _potential(self, player_lane: int, altar_lane: int, altar_active: bool) -> float:
@@ -112,7 +125,9 @@ class JinHillaScenarioEnv:
     def _on_soul_slash(self) -> None:
         """Update altar spawning rules at the start of a soul slash cycle.
 
-        Called when the scythe cycle enters the SPREAD_ART phase.
+        Called both immediately at reset (to cover episodes that end before the
+        first in-cycle SPREAD_ART tick) and whenever the scythe cycle enters the
+        SPREAD_ART phase during play.
         """
         state = self._require_state()
         self.hits_since_soul_slash = 0

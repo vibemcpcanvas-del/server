@@ -121,6 +121,25 @@ class JinHillaScenarioAltarRuleTests(unittest.TestCase):
         self.assertFalse(env.altar_active)
         self.assertFalse(state.altar_present)
 
+    def test_altar_threshold_is_active_immediately_after_reset(self):
+        """Regression test: episodes that end before the first in-cycle
+        SPREAD_ART tick must still have an active altar threshold, otherwise
+        cleanse_count is structurally zero for the entire episode."""
+        env = JinHillaScenarioEnv()
+        env.reset()
+        self.assertIsNotNone(env.altar_hits_needed)
+        self.assertEqual(env.altar_hits_needed, 3)  # ceil(5 / 2)
+        self.assertTrue(env.can_spawn_altar)
+
+    def test_altar_can_spawn_within_first_three_hits_after_reset(self):
+        env = JinHillaScenarioEnv()
+        env.reset()
+        for _ in range(2):
+            env._register_hit_for_altar()
+            self.assertFalse(env.altar_active)
+        env._register_hit_for_altar()
+        self.assertTrue(env.altar_active)
+
 
 if __name__ == "__main__":
     unittest.main()
