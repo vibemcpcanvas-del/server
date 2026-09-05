@@ -1,0 +1,14 @@
+# 로컬 PC (Windows) 실행 의존성 파일
+# 설치 명령어: pip install -r requirements-local.txt
+
+gymnasium>=0.29.0
+stable-baselines3>=2.0.0
+torch>=2.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# Windows Zero-Copy 초저지연 화면 캡처 라이브러리
+dxcam>=0.1.0; sys_platform == 'win32'
+
+# 향후 키보드 직접 입력 제어 확장 시 사용
+pydirectinput>=1.0.4; sys_platform == 'win32'
