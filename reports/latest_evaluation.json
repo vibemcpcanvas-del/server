@@ -1,0 +1,44 @@
+{
+  "device": "cuda",
+  "seed": 10000,
+  "normal_evaluation": {
+    "learned_policy": {
+      "episodes": 200,
+      "mean_reward": 366.29773333907127,
+      "mean_survival_steps": 349.375,
+      "red_exceeds_green_termination_rate": 0.03,
+      "mean_cleanse_count": 0.0,
+      "mean_dodge_count": 349.285
+    },
+    "random_baseline": {
+      "episodes": 200,
+      "mean_reward": 22.68032323718071,
+      "mean_survival_steps": 39.565,
+      "red_exceeds_green_termination_rate": 1.0,
+      "mean_cleanse_count": 0.0,
+      "mean_dodge_count": 36.565
+    }
+  },
+  "stress_evaluation": {
+    "condition": {
+      "green_skulls": 2,
+      "red_skulls": 3,
+      "altar_active": true
+    },
+    "learned_policy": {
+      "episodes": 50,
+      "mean_reward": 377.9999828338623,
+      "mean_survival_steps": 360.0,
+      "red_exceeds_green_termination_rate": 0.0,
+      "mean_cleanse_count": 0.0,
+      "mean_dodge_count": 360.0
+    }
+  },
+  "m8_pass_gates": {
+    "beats_random_reward": true,
+    "survival_at_least_110pct": true,
+    "red_exceeds_rate_le_0_20": true,
+    "altar_resolution_verified": false
+  },
+  "m8_complete": false
+}
