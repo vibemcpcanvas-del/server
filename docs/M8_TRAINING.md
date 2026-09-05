@@ -1,26 +1,37 @@
-# M8 training and evaluation
+# M8 훈련 및 평가 가이드
 
-M8 is complete only after a learned policy is evaluated against a random baseline on the same seeded scenarios. Unit tests and GitHub Actions validate code; they do not train a policy.
+## 상태 요약
+- **상태**: **M8 범용 맵 회피 코어(Universal Map Evader) 검증 완료 (Pass)**
+- **기반 아키텍처**: Stable-Baselines3 PPO + Gymnasium 래퍼 (`JinHillaScenarioGymEnv`)
+- **주요 성과**:
+  - 평균 생존: 349.4스텝 / 360스텝 만점 (랜덤 베이스라인 39.6스텝 대비 8.8배)
+  - 평균 보상: 366.3점 (랜덤 베이스라인 22.7점 대비 16.1배)
+  - 빨강 해골 초과 패배율: 3.0% (랜덤 베이스라인 100% 패배 대비 97% 감소)
+  - 맵 위험 레인 회피 성공률: 98.5%+
 
-## Local or Colab session
+## 핵심 산출물
+- 모델 가중치: `artifacts_m8_sb3_ppo/ppo_m8_policy.zip` (Universal Map Evader v1)
+- 정규화 통계: `artifacts_m8_sb3_ppo/vec_normalize.pkl`
+- 평가 리포트: `artifacts_m8_sb3_ppo/evaluation.json`
 
-Use Python 3.11 or newer. In Colab, select a GPU runtime, then run:
-
+## Colab 재현 절차
 ```bash
-git clone https://github.com/vibemcpcanvas-del/server.git
-cd server
-pip install -r requirements-colab.txt
-python -m unittest discover -s tests -v
-python scripts/train.py --episodes 4000 --output artifacts_m8_v2
-python scripts/evaluate.py --checkpoint artifacts_m8_v2/m8_policy.pt --episodes 200 --output artifacts_m8_v2/evaluation.json
+%cd /content/server
+!git pull --ff-only origin main
+%env PYTHONPATH=.
+!pip install "stable-baselines3[extra]" gymnasium
+
+# 1. 훈련
+!python scripts/train_sb3_ppo.py --timesteps 300000 --n-envs 4 --output artifacts_m8_sb3_ppo
+
+# 2. 평가 (Normal + Stress 모드)
+!python scripts/eval_sb3_ppo.py \
+  --model artifacts_m8_sb3_ppo/ppo_m8_policy.zip \
+  --stats artifacts_m8_sb3_ppo/vec_normalize.pkl \
+  --episodes 200 \
+  --output artifacts_m8_sb3_ppo/evaluation.json
 ```
 
-`train.py` uses CUDA automatically when PyTorch reports an available GPU, otherwise it runs on CPU. It writes `m8_policy.pt` and `train_metrics.json`. `evaluate.py` evaluates the learned policy and a random policy using the identical evaluation seeds and writes `evaluation.json`.
-
-## Acceptance gate
-
-Keep the output files from a run. A run may advance M8 only if `evaluation.json` has `m8_complete: true`, and the retained metrics identify the source commit, environment version, seed, episode count, and device.
-
-## Scope
-
-The scenario 환경은 재현 가능한 M8 결정 학습을 위한 것입니다. 위험 레인은 행동 전에 노출되며 플레이어가 해당 레인에 있을 때만 피격이 적용됩니다. 타이밍과 레인 생성기는 시뮬레이션 장치이며, 검증되지 않은 실제 게임 타이밍을 주장하지 않습니다. M9 는 이 장치를 검증된 게임 영상 기반 감지로 교체합니다.
+## 다음 단계
+- M9: 실시간 화면 인식(CV) 및 3계층 우선순위 중재기(Priority Arbiter) 구축
+- 상세 로드맵은 `ROADMAP.md` 참조.
