@@ -8,30 +8,13 @@ from .jin_hilla_environment_core import JinHillaState, ScytheCycle, SoulState, S
 class JinHillaScenarioEnv:
     """M8 Jin Hilla training scenario with numeric policy observations.
 
-    Altar spawning rule (deviates intentionally from the real-game formula):
-    - The real MapleStory formula is ceil(green_skulls / 2) hits to spawn an
-      altar. Under this simulator's simplified defeat rule (defeated when
-      red_skulls > green_skulls), that exact formula coincides with the lethal
-      hit for every ODD starting skull count (5, 3, 1): the hit that spawns the
-      altar is the SAME hit that ends the episode, making cleansing
-      structurally impossible no matter how good the policy is.
-    - To keep training meaningful, this simulator instead uses
-      max(1, green_skulls // 2), which guarantees at least a one-hit buffer
-      between the altar-spawning hit and the lethal hit for every starting
-      skull count. This is a disclosed fixture deviation, not the real game
-      rule.
-    - If green_skulls <= 1 when the threshold is (re)activated, altar spawning
-      is impossible until the next soul slash.
-    - Each web hit during the cycle counts toward this threshold; once
-      reached, a single altar is spawned.
-
-    Hazard-avoidance shaping:
-    - In addition to the sparse +1 dodge / -5 hit reward, a potential-based
-      shaping term rewards keeping distance from the current hazard lane.
-      Without this, the only signal a policy gets about the hazard is after
-      the fact (already hit or already safe this step), which gave no
-      gradient toward proactively moving away. This mirrors the existing
-      altar-distance PBRS term.
+    This environment models altar spawning based on Jin Hilla's soul slash pattern:
+    - At the start of each soul slash (ScythePhase.SPREAD_ART), the number of hits
+      required to spawn an altar is set to ceil(green_skulls / 2).
+    - If green_skulls <= 1 at that moment, altar spawning becomes impossible
+      until the next soul slash.
+    - Each web hit during the cycle counts toward this threshold; once reached,
+      a single altar is spawned.
     """
 
     observation_size = 7
@@ -63,7 +46,7 @@ class JinHillaScenarioEnv:
         self.can_spawn_altar: bool = True
         self._reset_state()
 
-    def _reset_state(self) -> None:
+    def _reset_state(self, options: dict | None = None) -> None:
         self.step_count = 0
         self.web_hits = 0
         self.cleanse_count = 0
@@ -72,30 +55,43 @@ class JinHillaScenarioEnv:
         self.hazard_lane = self.rng.randint(0, self.num_lanes - 1)
         while self.hazard_lane == self.player_lane:
             self.hazard_lane = self.rng.randint(0, self.num_lanes - 1)
-        self.altar_lane = self.rng.randint(0, self.num_lanes - 1)
-        self.altar_active = False
+
+        # 기본 상태
+        green = 5
+        red = 0
+        altar_active = False
+        altar_lane = self.rng.randint(0, self.num_lanes - 1)
+
+        # 위기 상황(Stress Mode) 옵션 지원
+        if options:
+            green = options.get("green_skulls", green)
+            red = options.get("red_skulls", red)
+            altar_active = options.get("altar_active", altar_active)
+            if "player_lane" in options:
+                self.player_lane = options["player_lane"]
+            if "altar_lane" in options:
+                altar_lane = options["altar_lane"]
+
+        self.altar_lane = altar_lane
+        self.altar_active = altar_active
         self.altar_hits_needed = None
         self.hits_since_soul_slash = 0
         self.can_spawn_altar = True
         self.state = JinHillaState(
-            souls=SoulState(green=5, red=0),
+            souls=SoulState(green=green, red=red),
             scythe=ScytheCycle(30, 15, 20),
-            altar_present=False,
-            altar_lane=None,
+            altar_present=altar_active,
+            altar_lane=altar_lane if altar_active else None,
             player_lane=self.player_lane,
         )
-        # Activate the first altar threshold immediately so episodes that end
-        # before the scythe cycle's first SPREAD_ART tick (30 + 15 = 45 steps)
-        # still get a chance to spawn an altar.
-        self._on_soul_slash()
 
     def _require_state(self) -> JinHillaState:
         if self.state is None:
             raise RuntimeError("call reset() before interacting with the environment")
         return self.state
 
-    def reset(self) -> list[float]:
-        self._reset_state()
+    def reset(self, options: dict | None = None) -> list[float]:
+        self._reset_state(options=options)
         return self._get_observation()
 
     def _get_observation(self) -> list[float]:
@@ -123,34 +119,14 @@ class JinHillaScenarioEnv:
             "web_hits": self.web_hits,
             "cleanse_count": self.cleanse_count,
             "dodge_count": self.dodge_count,
-            "altar_hits_needed": self.altar_hits_needed,
-            "hits_since_soul_slash": self.hits_since_soul_slash,
         }
 
-    def _altar_potential(self, player_lane: int, altar_lane: int, altar_active: bool) -> float:
+    def _potential(self, player_lane: int, altar_lane: int, altar_active: bool) -> float:
         if not altar_active:
             return 0.0
         return 2.0 / (abs(player_lane - altar_lane) + 1)
 
-    def _hazard_potential(self, player_lane: int, hazard_lane: int) -> float:
-        """Higher (less negative) when farther from the hazard lane.
-
-        This gives a dense, directional signal that rewards proactively
-        moving away from danger, instead of only reacting after a hit
-        already happened.
-        """
-        distance = abs(player_lane - hazard_lane)
-        max_distance = self.num_lanes - 1
-        return -1.0 * (max_distance - distance) / max_distance
-
     def _on_soul_slash(self) -> None:
-        """Update altar spawning rules at the start of a soul slash cycle.
-
-        Uses max(1, green // 2) instead of the real-game ceil(green / 2) to
-        guarantee at least a one-hit buffer before the lethal hit under this
-        simulator's simplified defeat rule (red_skulls > green_skulls). See
-        the class docstring for the full rationale.
-        """
         state = self._require_state()
         self.hits_since_soul_slash = 0
         green = state.souls.green
@@ -159,16 +135,14 @@ class JinHillaScenarioEnv:
             self.altar_hits_needed = None
             return
         self.can_spawn_altar = True
-        self.altar_hits_needed = max(1, green // 2)
+        self.altar_hits_needed = math.ceil(green / 2)
 
     def _register_hit_for_altar(self) -> None:
-        """Register a web hit and spawn altar when the threshold is reached."""
         if not self.can_spawn_altar or self.altar_hits_needed is None or self.altar_active:
             return
         self.hits_since_soul_slash += 1
         if self.hits_since_soul_slash < self.altar_hits_needed:
             return
-        # Spawn a single altar for this cycle.
         self.altar_lane = self.rng.randint(0, self.num_lanes - 1)
         self.altar_active = True
         state = self._require_state()
@@ -180,8 +154,7 @@ class JinHillaScenarioEnv:
             raise ValueError(f"unknown action: {action}")
         state = self._require_state()
         reward = 0.0
-        prev_altar_potential = self._altar_potential(self.player_lane, self.altar_lane, self.altar_active)
-        prev_hazard_potential = self._hazard_potential(self.player_lane, self.hazard_lane)
+        prev_potential = self._potential(self.player_lane, self.altar_lane, self.altar_active)
 
         phase_change = state.tick()
         if phase_change is ScythePhase.SPREAD_ART:
@@ -214,10 +187,8 @@ class JinHillaScenarioEnv:
             if state.altar_lane is not None:
                 self.altar_lane = state.altar_lane
 
-        curr_altar_potential = self._altar_potential(self.player_lane, self.altar_lane, self.altar_active)
-        curr_hazard_potential = self._hazard_potential(self.player_lane, self.hazard_lane)
-        reward += 0.99 * curr_altar_potential - prev_altar_potential
-        reward += 0.99 * curr_hazard_potential - prev_hazard_potential
+        curr_potential = self._potential(self.player_lane, self.altar_lane, self.altar_active)
+        reward += 0.99 * curr_potential - prev_potential
         self.step_count += 1
 
         if self.step_count % self.hazard_interval == 0:

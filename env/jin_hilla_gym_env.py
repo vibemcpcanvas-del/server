@@ -27,7 +27,7 @@ class JinHillaScenarioGymEnv(gym.Env):
         super().reset(seed=seed)
         if seed is not None:
             self._env = JinHillaScenarioEnv(seed=seed)
-        obs = self._env.reset()
+        obs = self._env.reset(options=options)
         return np.array(obs, dtype=np.float32), {}
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
