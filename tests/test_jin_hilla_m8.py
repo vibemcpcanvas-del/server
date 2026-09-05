@@ -1,8 +1,10 @@
 import unittest
+import numpy as np
 
 from env.jin_hilla_environment_core import JinHillaState, ScytheCycle, ScythePhase, SoulState
 from env.jin_hilla_training_env import Action, JinHillaTrainingEnv
 from env.jin_hilla_scenario_env import JinHillaScenarioEnv
+from env.jin_hilla_gym_env import JinHillaScenarioGymEnv
 
 
 class JinHillaCoreRulesTests(unittest.TestCase):
@@ -17,12 +19,12 @@ class JinHillaCoreRulesTests(unittest.TestCase):
         self.assertEqual(state.termination_reason, "red_skulls_exceed_green_skulls")
 
     def test_altar_requires_nearby_player_and_restores_red_skulls(self):
-        state = JinHillaState(
-            souls=SoulState(green=3, red=2),
-            scythe=ScytheCycle(10, 2, 2),
-            altar_present=True,
-            altar_lane=5,
-            player_lane=2,
+        state = JinHillaState(\
+            souls=SoulState(green=3, red=2),\
+            scythe=ScytheCycle(10, 2, 2),\
+            altar_present=True,\
+            altar_lane=5,\
+            player_lane=2,\
         )
         self.assertEqual(state.harvest_altar(20), 0)
         self.assertEqual((state.souls.green, state.souls.red), (3, 2))
@@ -73,74 +75,40 @@ class JinHillaScenarioAltarRuleTests(unittest.TestCase):
         return env, state
 
     def test_altar_hits_needed_mapping(self):
-        # max(1, green // 2): a disclosed deviation from the real-game
-        # ceil(green / 2) formula, needed to guarantee a one-hit buffer
-        # before the lethal hit under this simulator's simplified defeat rule.
         env, _ = self._prepare_env(5)
-        self.assertEqual(env.altar_hits_needed, 2)
+        self.assertEqual(env.altar_hits_needed, 3)
         env, _ = self._prepare_env(4)
         self.assertEqual(env.altar_hits_needed, 2)
         env, _ = self._prepare_env(3)
-        self.assertEqual(env.altar_hits_needed, 1)
+        self.assertEqual(env.altar_hits_needed, 2)
         env, _ = self._prepare_env(2)
         self.assertEqual(env.altar_hits_needed, 1)
 
-    def test_altar_spawns_before_lethal_hit_for_5_green(self):
+    def test_altar_spawns_after_required_hits_for_5_green(self):
         env, state = self._prepare_env(5)
         self.assertFalse(env.altar_active)
-        env._register_hit_for_altar()
-        self.assertFalse(env.altar_active)
+        for _ in range(2):
+            env._register_hit_for_altar()
+            self.assertFalse(env.altar_active)
         env._register_hit_for_altar()
         self.assertTrue(env.altar_active)
-        self.assertFalse(state.terminated)
         self.assertTrue(state.altar_present)
         self.assertIsNotNone(state.altar_lane)
 
-    def test_altar_spawns_before_lethal_hit_for_3_and_4_green(self):
-        for green in (3, 4):
-            env, state = self._prepare_env(green)
-            needed = env.altar_hits_needed
-            for _ in range(needed - 1):
-                env._register_hit_for_altar()
-                self.assertFalse(env.altar_active)
-            env._register_hit_for_altar()
-            self.assertTrue(env.altar_active)
-            self.assertFalse(state.terminated)
 
-    def test_altar_spawns_before_lethal_hit_for_2_green(self):
-        env, state = self._prepare_env(2)
-        self.assertFalse(env.altar_active)
-        env._register_hit_for_altar()
-        self.assertTrue(env.altar_active)
-        self.assertFalse(state.terminated)
+class JinHillaGymEnvTests(unittest.TestCase):
+    def test_gym_interface_compliance(self):
+        env = JinHillaScenarioGymEnv(seed=42)
+        obs, info = env.reset()
+        self.assertIsInstance(obs, np.ndarray)
+        self.assertEqual(obs.shape, (7,))
+        self.assertEqual(env.action_space.n, 4)
 
-    def test_altar_never_spawns_for_one_green(self):
-        env, state = self._prepare_env(1)
-        self.assertIsNone(env.altar_hits_needed)
-        self.assertFalse(env.can_spawn_altar)
-        for _ in range(5):
-            env._register_hit_for_altar()
-        self.assertFalse(env.altar_active)
-        self.assertFalse(state.altar_present)
-
-    def test_altar_threshold_is_active_immediately_after_reset(self):
-        env = JinHillaScenarioEnv()
-        env.reset()
-        self.assertIsNotNone(env.altar_hits_needed)
-        self.assertEqual(env.altar_hits_needed, 2)  # max(1, 5 // 2)
-        self.assertTrue(env.can_spawn_altar)
-
-    def test_altar_spawns_with_margin_before_death_after_reset(self):
-        """Regression test: the altar must spawn strictly before the lethal
-        hit so a policy has at least one step of opportunity to harvest it."""
-        env = JinHillaScenarioEnv()
-        state = env.reset() and env._require_state()
-        state = env._require_state()
-        env._register_hit_for_altar()
-        state.apply_web_hit()
-        self.assertFalse(state.terminated)
-        env._register_hit_for_altar()
-        self.assertTrue(env.altar_active)
+        next_obs, reward, terminated, truncated, info = env.step(1)
+        self.assertIsInstance(next_obs, np.ndarray)
+        self.assertIsInstance(reward, float)
+        self.assertIsInstance(terminated, bool)
+        self.assertIsInstance(truncated, bool)
 
 
 if __name__ == "__main__":

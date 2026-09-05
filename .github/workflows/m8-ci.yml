@@ -1,27 +1,30 @@
-name: M8 validation
+name: M8 CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
+    branches: [ main ]
 
 jobs:
-  unit-tests:
-    name: M8 rule and environment tests
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Run M8 validation suite
-        run: python -m unittest discover -s tests -v
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch gymnasium "stable-baselines3[extra]"
+          if [ -f requirements-colab.txt ]; then pip install -r requirements-colab.txt; fi
+
+      - name: Run unit tests
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m unittest discover -s tests -v

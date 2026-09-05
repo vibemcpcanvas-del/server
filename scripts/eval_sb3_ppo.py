@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import os
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 import numpy as np
@@ -12,12 +16,51 @@ from stable_baselines3.common.vec_env import VecNormalize
 from env.jin_hilla_gym_env import JinHillaScenarioGymEnv
 
 
+def upload_to_github(result_json_str: str, repo: str = "vibemcpcanvas-del/server", path: str = "reports/latest_evaluation.json", token: str | None = None) -> None:
+    token = token or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("[Auto-Upload] GITHUB_TOKEN이 설정되지 않아 저장을 건너뜁니다.")
+        return
+
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "M8-Auto-Evaluator",
+    }
+
+    sha = None
+    try:
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            sha = data.get("sha")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"[Auto-Upload] 기존 파일 확인 실패: {e}")
+
+    content_b64 = base64.b64encode(result_json_str.encode("utf-8")).decode("utf-8")
+    payload = {
+        "message": "chore(eval): auto-update evaluation report from Colab",
+        "content": content_b64,
+        "branch": "main",
+    }
+    if sha:
+        payload["sha"] = sha
+
+    try:
+        req_put = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="PUT")
+        with urllib.request.urlopen(req_put) as resp:
+            print(f"[Auto-Upload] 성공: GitHub 저장소({repo}/{path})에 평가 리포트가 자동 업로드되었습니다!")
+    except Exception as e:
+        print(f"[Auto-Upload] GitHub 업로드 중 오류 발생: {e}")
+
+
 def run_benchmark(policy_fn, eval_env, episodes: int, base_seed: int, options: dict | None = None):
     rewards, steps, red_exceeds, cleanses, dodges = [], [], [], [], []
 
     for ep in range(episodes):
         eval_env.seed(base_seed + ep)
-        # reset with optional stress conditions
         if options:
             eval_env.env_method("reset", options=options)
             obs = eval_env.reset()
@@ -58,6 +101,7 @@ def main() -> None:
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--seed", type=int, default=10000)
     parser.add_argument("--output", default="artifacts_m8_sb3_ppo/evaluation.json")
+    parser.add_argument("--auto-upload", action="store_true", default=True, help="Automatically upload evaluation report to GitHub repo")
     args = parser.parse_args()
 
     eval_env = make_vec_env(lambda: JinHillaScenarioGymEnv(), n_envs=1)
@@ -92,9 +136,6 @@ def main() -> None:
         options=stress_condition,
     )
 
-    # 3. 범용 보스 평가 게이트
-    # - 평소에는 압도적인 생존력과 회피율
-    # - 제단이 존재하는 위기 상황에서는 0회 이상의 적극적 정화 수행
     gates = {
         "beats_random_reward": learned_normal["mean_reward"] > random_normal["mean_reward"],
         "survival_at_least_110pct": learned_normal["mean_survival_steps"] >= (random_normal["mean_survival_steps"] * 1.10),
@@ -118,10 +159,15 @@ def main() -> None:
         "m8_complete": complete,
     }
 
+    result_json = json.dumps(result, indent=2)
     out_file = Path(args.output)
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    out_file.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    print(json.dumps(result, indent=2))
+    out_file.write_text(result_json, encoding="utf-8")
+    print(result_json)
+
+    # GitHub 저장소로 자동 업로드
+    if args.auto_upload:
+        upload_to_github(result_json)
 
 
 if __name__ == "__main__":
