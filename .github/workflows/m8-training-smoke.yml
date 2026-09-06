@@ -22,16 +22,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements-colab.txt ]; then python -m pip install -r requirements-colab.txt; elif [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
-      - name: Run one-episode training smoke test
+      - name: Install ML dependencies (SB3 smoke)
+        run: python -m pip install "stable-baselines3>=2.0.0" "gymnasium>=0.29.0"
+      - name: Run SB3 PPO training smoke test
         env:
           PYTHONPATH: .
         run: |
-          python scripts/train.py --episodes 1 --output smoke_artifacts
-          test -f smoke_artifacts/m8_policy.pt
-          test -f smoke_artifacts/train_metrics.json
-      - name: Run one-episode evaluation smoke test
+          python scripts/train_sb3_ppo.py --timesteps 512 --n-envs 2 --output smoke_artifacts
+          test -f smoke_artifacts/ppo_m8_policy.zip
+      - name: Run SB3 evaluation smoke test
         env:
           PYTHONPATH: .
         run: |
-          python scripts/evaluate.py --checkpoint smoke_artifacts/m8_policy.pt --episodes 1 --output smoke_artifacts/evaluation.json
+          python scripts/eval_sb3_ppo.py --model smoke_artifacts/ppo_m8_policy.zip --stats smoke_artifacts/vec_normalize.pkl --episodes 2 --output smoke_artifacts/evaluation.json
           test -f smoke_artifacts/evaluation.json
