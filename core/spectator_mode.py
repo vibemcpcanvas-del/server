@@ -69,6 +69,26 @@ def heuristic_action(obs: dict) -> int:
     return 4
 
 
+def play_sound(kind: str = "enter_boss"):
+    """입장 등 주요 이벤트 시 사운드 재생 (사용자 요청: 보스전 입장 전 알림).
+
+    winsound는 Windows 표준 — 외부 파일 불필요, 세션 장벽 없음(검증 필요).
+    종류: enter_boss(2회 상승 비프) = 곧 입장한다는 신호.
+    """
+    import winsound
+    try:
+        if kind == "enter_boss":
+            # 낮은음 → 높은음 2회 (경고 멜로디)
+            winsound.Beep(880, 200)
+            time.sleep(0.1)
+            winsound.Beep(1320, 350)
+        elif kind == "done":
+            winsound.Beep(1320, 150)
+            winsound.Beep(880, 300)
+    except Exception as e:
+        print("sound error:", e)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hwnd", type=lambda x: int(x, 0), default=5899344)
@@ -77,7 +97,14 @@ def main():
     ap.add_argument("--arm", action="store_true",
                     help="입력 활성화 (기본: 관전-only, 결정 로그만)")
     ap.add_argument("--out", default=r"reports\spectator_log.json")
+    ap.add_argument("--enter-sound", action="store_true",
+                    help="입장 시퀀스 시작 전 사운드 재생 (사용자 알림)")
     args = ap.parse_args()
+
+    if args.enter_sound:
+        play_sound("enter_boss")
+        print("🔔 사운드 재생됨 — 5초 후 입장 시퀀스 시작")
+        time.sleep(5)
 
     restore_window(args.hwnd)
     ctl = InputController(args.hwnd, dry_run=not args.arm)
