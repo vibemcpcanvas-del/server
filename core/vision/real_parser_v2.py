@@ -1,27 +1,22 @@
 # -*- coding: utf-8 -*-
-"""R2 — 실화면 비전 파서 v2 (하이브리드: HSV 색추적 1차 + ROI 정밀 2차).
+"""R2 — 실화면 비전 파서 v2.1 (해상도 정규화 버전).
 
-v2 PM 캘리브레이션 반영 (C_260903_013537_2 비전 실측):
-- 해골 UI 고정 위치: x=600..765, y=90..115, 5슬롯
-  * 초록 해골 = 노랑빛 녹색 (H 35..60)
-  * 빨간 해골 = 핑크/마젠타 (H 140..180)
-- SS 타이머: x=655..710, y=130..148 (흰색 숫자 존재성)
-- WARNING: 타이머 주변 빨간 텍스트 픽셀 존재성
-- 보스 HP바: y=2..12, x=270..1090 (핑크 바) → 보스전 판별
-- 플레이어: 화면 하단부(y 430..660) 백색/크림 클러스터 (스킬바 y>680 제외)
-- 보스: 플레이 영역 내 "빨간 머리(H0..10,고채도)" + 큰 블롭
-- 붉은 실: 플레이 영역의 세로 빨간 기둥 (면적 기반)
-- 서브레인: 280px/3 ≈ 93.3px
-
-출력: 파싱 결과 dict + 소요시간(ms). 카메라 앵커 미해결(플레이어 상대 좌표 제공).
+v2 캘리브레이션 (C시리즈 1366x768 실측) + v2.1 신규:
+- **입력 프레임을 기준 해상도(1366x768)로 리사이즈 후 파싱** — 창 크기/위치
+  무관하게 동작 (보스 입장 실측: 창이 1382x807로 이동해도 해골 UI 인식).
+  리사이즈 비용: 1366x768 -> 1366x768은 no-op, 다른 크기는 cv2.resize 1회 (~1ms).
+- 색 임계값·3클래스 해골 분류는 GT 실측값 그대로 유지.
 """
 from __future__ import annotations
 
 import time
+
 import cv2
 import numpy as np
 
-# ── 고정 UI 관심영역 (1366x768 실측) ──
+BASE_W, BASE_H = 1366, 768
+
+# ── 고정 UI 관심영역 (기준 해상도 상대좌표) ──
 ROI_SKULLS = (600, 88, 766, 118)      # x0,y0,x1,y1
 ROI_TIMER = (640, 126, 726, 152)
 ROI_BOSS_HP = (270, 2, 1090, 14)
@@ -47,15 +42,134 @@ def detect_is_bossfight(img: np.ndarray) -> bool:
 
 
 def detect_skulls(img: np.ndarray) -> dict:
-    """해골 5슬롯 3클래스 — GT 프레임 실측 통계 기반 (r2_skull_stats.py).
+    """해골 5슬롯 3클래스 — 하이브리드 (v2.5).
 
-    실측 (6 GT 프레임 × 30슬롯, 2026-09-07):
-      g(생존 초록):  V median 136 (66..159), H 31..169 — H는 불안정, V가 구분 축
-      d(파괴 올리브): V median 72  (66..137), H/S는 g와 겹침
-      r(빼앗김 핑크): H=169 고정, S 170..191, V 146..163
-    규칙: H∈[160,180) & S≥150 → r / 슬롯 V-median ≥100 → g / 아니면 d
-    V-median은 조명·오버랩에 강함(픽셀 카운트 대비).
+    UI 레이아웃은 패치/창모드에 따라 바뀜(실측: 해골이 남은시간 하단↔우측 이동).
+    - 두 경로(고정 ROI / 동적 타이머앵커+피크)를 모두 돌리고,
+    - 판정이 크게 다르면(차이 >=3슬롯) '블롭 피크 5개 + y 일관성'을 가진
+      동적 결과를 신뢰한다 (고정 ROI는 레이아웃이 바뀌면 엉뚱한 곳을 읽음).
+    - 근소 차이(<=2슬롯)면 GT 95/95 검증된 고정 경로 유지.
     """
+    fixed = _detect_skulls_fixed(img)
+    # 동적 경로 트리거: 고정 ROI 위치에 해골이 '실제로 없는' 경우만.
+    # 판별: 고정 ROI 밴드(y88..118, x600..766) 안에 초록+핑크 픽셀이 거의 없으면
+    # 레이아웃이 이동한 것(신규 UI는 해골이 남은시간 우측 y30..75에 위치).
+    x0, y0, x1, y1 = ROI_SKULLS
+    band = img[y0:y1, x0:x1]
+    hs_band = _hsv(band)
+    g_in = int(cv2.inRange(hs_band, (35, 90, 120), (60, 255, 255)).sum()) // 255
+    p_in = int(cv2.inRange(hs_band, (150, 140, 120), (180, 255, 255)).sum()) // 255
+    if g_in + p_in > 130:
+        return fixed   # 고정 위치에 해골 존재 → 검증된 경로
+    dyn = _detect_skulls_dynamic(img)
+    if dyn is None:
+        return fixed
+    diff = (abs(fixed["green_skulls"] - dyn["green_skulls"])
+            + abs(fixed["red_skulls"] - dyn["red_skulls"])
+            + abs(fixed["skulls_destroyed"] - dyn["skulls_destroyed"]))
+    if diff >= 3 and dyn.get("skull_slots") == 5 and dyn.get("peaks_y_std", 99) < 15:
+        return dyn
+    return fixed
+
+
+def _detect_skulls_dynamic(img: np.ndarray) -> dict | None:
+    """동적 경로: 타이머 앵커 + 블롭 피크 (레이아웃 변형 대응). 실패 시 None."""
+    ch, cw = img.shape[:2]
+    y1 = int(ch * 0.12)
+    strip = img[0:y1, :]
+    hs = _hsv(strip)
+    g_mask = cv2.inRange(hs, (35, 90, 120), (60, 255, 255))
+    p_mask = cv2.inRange(hs, (150, 140, 120), (180, 255, 255))
+    skull_mask = cv2.bitwise_or(g_mask, p_mask)
+
+    cols = skull_mask.sum(axis=0)  # x별 픽셀 수
+    total_active = int((cols > 60).sum())
+    if total_active < 40:
+        # 동적 탐지 실패 → 구 고정 ROI 폴백
+        return _detect_skulls_fixed(img)
+
+    # 앵커: 남은시간 텍스트(큰 흰 숫자). 해골 UI는 그 인접(±0.35폭)에만 존재.
+    gray = cv2.cvtColor(strip, cv2.COLOR_BGR2GRAY)
+    white = cv2.inRange(gray, 200, 255)
+    wcols = white.sum(axis=0)
+    wwin = int(cw * 0.15)
+    if wwin < 30:
+        return _detect_skulls_fixed(img)
+    wcsum = np.concatenate([[0], np.cumsum(wcols)])
+    wa, wbest = 0, -1.0
+    for a in range(0, cw - wwin):
+        d = float(wcsum[a + wwin] - wcsum[a])
+        if d > wbest:
+            wbest, wa = d, a
+    timer_cx = wa + wwin // 2
+
+    # 해골 블롭 피크 5개 직접 탐지: 스무딩한 히스토그램에서 국소 최대치.
+    # 탐색 범위 ±22%폭 (실측: 해골 중심은 타이머 중심 +50~+130px — HP게이지 등
+    # 좌측 초록 요소를 배제하려면 좁게)
+    kernel = np.ones(int(cw * 0.01) | 1, dtype=float)
+    smooth = np.convolve(cols, kernel / kernel.sum(), mode="same")
+    lo = min(cw - 10, timer_cx + int(cw * 0.015))
+    hi = min(cw, timer_cx + int(cw * 0.22))
+    if hi - lo < 60:
+        return _detect_skulls_fixed(img)
+    min_h = max(200.0, float(smooth[lo:hi].max()) * 0.25)
+    peaks = []
+    i = lo
+    while i < hi:
+        if smooth[i] >= min_h and smooth[i] == smooth[max(lo, i - 20):i + 20].max():
+            if not peaks or i - peaks[-1] > cw * 0.03:
+                peaks.append(i)
+        i += 1
+    if len(peaks) < 5:
+        # 피크 부족 → 앵커 근처 균등 5분할 폴백
+        win = int(cw * 0.16)
+        a0 = max(0, min(cw - win, timer_cx - win // 2 - int(cw * 0.02)))
+        peaks = [a0 + int((i + 0.5) * win / 5) for i in range(5)]
+    peaks = peaks[:5]
+    # 피크 중심 기준 반폭 슬롯 (피크 간격 = 해골 간격)
+    if len(peaks) >= 2:
+        spacing = int(np.median(np.diff(peaks[:5]))) if len(peaks) >= 5 else int(cw * 0.045)
+    else:
+        spacing = int(cw * 0.045)
+    half = max(14, spacing // 2)
+    # 판정 밴드: 각 피크의 y 중심(해골 블롭 y위치) ±22px — UI 프레임 테두리 제외
+    band_ys = []
+    peak_ys = []
+    for cx in peaks[:5]:
+        colband = skull_mask[:, max(0, cx - 15):cx + 15]
+        ys = np.where(colband.sum(axis=1) > 30)[0]
+        by0 = int(ys.min()) if len(ys) else 20
+        by1 = int(ys.max()) if len(ys) else 70
+        band_ys.append((by0, by1))
+        peak_ys.append((by0 + by1) / 2.0)
+    peaks_y_std = float(np.std(peak_ys)) if len(peak_ys) >= 3 else 99.0
+
+    green = red = destroyed = 0
+    centers = peaks[:5]
+    for (cx, (by0, by1)) in zip(centers, band_ys):
+        by0 = max(0, by0 - 2)
+        by1 = min(strip.shape[0], by1 + 3)
+        slot = strip[by0:by1, max(0, cx - half):cx + half]
+        shs = _hsv(slot)
+        pink_px = int(cv2.inRange(shs, (160, 170, 140), (180, 255, 255)).sum()) // 255
+        v = shs[:, :, 2]
+        vmask = v > 40
+        v_med = float(np.median(v[vmask])) if vmask.sum() > 20 else 0.0
+        if pink_px >= 100:
+            red += 1
+        elif v_med >= 96.0:
+            green += 1
+        else:
+            destroyed += 1
+    return {"green_skulls": green, "red_skulls": red,
+            "skulls_destroyed": destroyed, "skulls_seen": green + red,
+            "skull_slots": len(centers), "skull_peaks": [int(p) for p in centers],
+            "peaks_y_std": peaks_y_std,
+            "timer_cx": timer_cx, "layout": "dynamic"}
+
+
+def _detect_skulls_fixed(img: np.ndarray) -> dict:
+    """구 레이아웃(1366x768 고정 ROI) 폴백 — GT 95/95 검증된 경로."""
     x0, y0, x1, y1 = ROI_SKULLS
     roi = img[y0:y1, x0:x1]
     w = roi.shape[1] / 5.0
@@ -63,10 +177,8 @@ def detect_skulls(img: np.ndarray) -> dict:
     for i in range(5):
         s = roi[:, int(i * w):int((i + 1) * w)]
         hs = _hsv(s)
-        # 핑크 판정: 고채도 마젠타 픽셀 수
         pink = cv2.inRange(hs, (160, 150, 120), (180, 255, 255))
         pink_px = int(pink.sum()) // 255
-        # 슬롯 명도 중간값 (해골 픽셀 — 검은 배경 제외)
         v = hs[:, :, 2]
         vmask = v > 40
         v_med = float(np.median(v[vmask])) if vmask.sum() > 20 else float(v.mean())
@@ -77,7 +189,8 @@ def detect_skulls(img: np.ndarray) -> dict:
         else:
             destroyed += 1
     return {"green_skulls": green, "red_skulls": red,
-            "skulls_destroyed": destroyed, "skulls_seen": green + red}
+            "skulls_destroyed": destroyed, "skulls_seen": green + red,
+            "skull_slots": 5}
 
 
 def detect_soul_split(img: np.ndarray) -> dict:
@@ -85,10 +198,8 @@ def detect_soul_split(img: np.ndarray) -> dict:
     x0, y0, x1, y1 = ROI_TIMER
     roi = img[y0:y1, x0:x1]
     g = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    # 흰색 숫자 픽셀
     digits = int((g > 200).sum())
-    # WARNING: 타이머 아래 넓은 영역의 빨간 텍스트
-    wy0, wy1 = y1, min(768, y1 + 26)
+    wy0, wy1 = y1, min(BASE_H, y1 + 26)
     wroi = img[wy0:wy1, 560:800]
     hw = _hsv(wroi)
     warn = cv2.inRange(hw, (0, 150, 150), (8, 255, 255))
@@ -159,7 +270,12 @@ def detect_red_threads(img: np.ndarray) -> dict:
 
 
 def parse_frame(img: np.ndarray) -> dict:
-    """1프레임 전체 파싱 — 실시간 루프의 눈."""
+    """1프레임 전체 파싱 — 실시간 루프의 눈.
+
+    v2.1: 입력이 기준 해상도가 아니면 리사이즈해서 파싱 (창 크기 무관).
+    """
+    if img.shape[1] != BASE_W or img.shape[0] != BASE_H:
+        img = cv2.resize(img, (BASE_W, BASE_H), interpolation=cv2.INTER_AREA)
     out: dict = {}
     out["is_bossfight"] = detect_is_bossfight(img)
     if not out["is_bossfight"]:
@@ -181,8 +297,6 @@ def parse_path(path: str) -> tuple[dict, float]:
     img = cv2.imread(path)
     if img is None:
         return {"error": "imread_failed", "is_bossfight": False}, 0.0
-    if img.shape[:2] != (768, 1366):
-        img = cv2.resize(img, (1366, 768))
     t0 = time.perf_counter()
     res = parse_frame(img)
     return res, (time.perf_counter() - t0) * 1000.0
