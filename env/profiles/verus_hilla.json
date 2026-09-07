@@ -1,0 +1,176 @@
+{
+ "name": "Verus Hilla (진힐라)",
+ "map_id": "105200310",
+ "lane_count": 7,
+ "x_min": -945,
+ "x_max": 1035,
+ "ground_y": 135,
+ "max_steps": 900,
+ "ticks_per_second": 60,
+ "action_size": 10,
+ "phases": [
+  {
+   "hp_pct": [
+    100,
+    75
+   ],
+   "color": "red",
+   "patterns": [
+    "teleport",
+    "bind",
+    "forward_slash",
+    "downward_slash",
+    "greed_echo",
+    "mist"
+   ]
+  },
+  {
+   "hp_pct": [
+    75,
+    50
+   ],
+   "color": "pink",
+   "patterns": [
+    "teleport",
+    "bind",
+    "spinning_slash",
+    "bone_wave",
+    "reverse_bone_wave",
+    "mist"
+   ]
+  },
+  {
+   "hp_pct": [
+    50,
+    25
+   ],
+   "color": "yellow",
+   "patterns": [
+    "teleport",
+    "bind",
+    "spinning_slash",
+    "bone_wave",
+    "reverse_bone_wave",
+    "mist",
+    "necro_lotus"
+   ]
+  },
+  {
+   "hp_pct": [
+    25,
+    0
+   ],
+   "color": "green",
+   "patterns": [
+    "teleport",
+    "bind",
+    "spinning_slash",
+    "bone_wave",
+    "reverse_bone_wave",
+    "mist",
+    "necro_damien"
+   ]
+  }
+ ],
+ "threats": [
+  {
+   "type": "red_thread",
+   "zones": 7,
+   "zone_width_px": 280,
+   "types": [
+    "A",
+    "B",
+    "C"
+   ],
+   "sets": 6,
+   "telegraph_sec": 1.32,
+   "soul_absorb_stun_sec": 3,
+   "thread_active_sec": 1.0,
+   "order_interval_sec": 0.25,
+   "set_cooldown_sec": [
+    1,
+    3
+   ]
+  },
+  {
+   "type": "bone_wave",
+   "min_phase": 2,
+   "damage_pct": [
+    40,
+    50
+   ],
+   "first_hit_delay_sec": 2.25,
+   "duration_sec": 0.54,
+   "green": {
+    "safe": "front",
+    "front_margin_px": 240,
+    "back_margin_px": 90
+   },
+   "purple": {
+    "safe": "back",
+    "back_margin_px": 200,
+    "front_margin_px": 50
+   }
+  }
+ ],
+ "gimmicks": [
+  {
+   "type": "soul_altar",
+   "soul_start": 5,
+   "candle_threshold_per_player": 3,
+   "spawn_zones": [
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "boss_interference_respawn_sec": [
+    2,
+    3
+   ],
+   "harvest_presses_per_cleanse": 10,
+   "heal_unseal_sec": 6,
+   "damage_bonus_pct": 15,
+   "damage_bonus_sec": 5
+  }
+ ],
+ "observation": {
+  "frame_dim": 15,
+  "frame_stack": 4,
+  "fields": [
+   "green_skulls",
+   "red_skulls",
+   "danger_margin",
+   "defeated",
+   "altar_can_interact",
+   "altar_direction",
+   "altar_present",
+   "altar_distance",
+   "player_lane",
+   "boss_lane",
+   "boss_hp_pct",
+   "candles_lit",
+   "soul_split_seconds",
+   "bone_wave_active",
+   "bone_wave_danger"
+  ],
+  "potential_phi": {
+   "type": "altar_distance",
+   "k": 0.5
+  }
+ },
+ "rewards": {
+  "survive": 0.05,
+  "cleanse_per_soul": 1.0,
+  "web_hit": -1.0,
+  "defeat": -25.0,
+  "unsafe_scythe": -0.25,
+  "bone_wave_hit": -1.0
+ },
+ "sprites": {
+  "boss_main": "assets/verus_hilla/8880400_{action}_{frame}.png",
+  "attack_fx": "assets/verus_hilla/8880410_{action}_*.png",
+  "map_db": "assets/jinhilla_map_db.json"
+ }
+}
