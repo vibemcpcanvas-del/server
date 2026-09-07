@@ -15,6 +15,7 @@ M9_PIPELINE R4 규격:
 from __future__ import annotations
 
 import ctypes
+import os
 import threading
 import time
 from typing import Callable
@@ -49,21 +50,39 @@ SUB_DURATION = {0: 0.10, 1: 0.18, 2: 0.26}
 
 
 class KillSwitch:
-    """GetAsyncKeyState 폴링 킬스위치 — 포커스 무관 (검증된 StopSignal 패턴)."""
+    """비상 정지 — 이중 채널 (Hermes 세션 특성 반영):
 
-    def __init__(self, vk: int = VK_F12, poll: float = 0.08):
+    1. 파일 시그니처: 데스크톱(또는 지정 폴더)에 'KILL' 파일이 생기면 정지.
+       파일 시스템은 세션 장벽이 없어 어떤 컨텍스트에서도 작동.
+    2. GetAsyncKeyState F12: 일반 터미널 세션에서 작동 (Hermes 분리 세션에선
+       차단됨이 실측 확인됨 — 보조 채널로 유지).
+    """
+
+    def __init__(self, vk: int = VK_F12, poll: float = 0.15,
+                 kill_file: str | None = None):
         self._vk = vk
         self._poll = poll
         self._event = threading.Event()
         self._shutdown = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True,
-                                        name="KillSwitch-F12")
+                                        name="KillSwitch")
+        if kill_file is None:
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            kill_file = os.path.join(desktop, "KILL")
+        self.kill_file = kill_file
 
     def start(self):
+        if self._thread.is_alive():
+            return
         self._thread.start()
 
     def is_set(self) -> bool:
         return self._event.is_set()
+
+    def reason(self) -> str:
+        if self._file_triggered:
+            return "KILL_FILE"
+        return "F12"
 
     def stop(self):
         self._shutdown.set()
@@ -73,12 +92,20 @@ class KillSwitch:
     def _loop(self):
         while not self._event.is_set() and not self._shutdown.is_set():
             try:
+                # 채널 1: 파일 시그니처 (모든 세션에서 작동)
+                if os.path.exists(self.kill_file):
+                    self._file_triggered = True
+                    self._event.set()
+                    break
+                # 채널 2: F12 (일반 세션에서만 감지됨)
                 if _user32.GetAsyncKeyState(self._vk) & 0x8000:
                     self._event.set()
                     break
             except Exception:
                 pass
             time.sleep(self._poll)
+
+    _file_triggered = False
 
 
 class InputController:
@@ -109,7 +136,7 @@ class InputController:
 
     def safe_to_act(self) -> tuple[bool, str]:
         if self.kill.is_set():
-            return False, "KILL_SWITCH"
+            return False, "KILL_SWITCH:" + self.kill.reason()
         if not self.enabled:
             return False, "NOT_ARMED"
         if not self.game_has_focus():

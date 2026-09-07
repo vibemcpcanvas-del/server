@@ -25,11 +25,19 @@ class TestInputController(unittest.TestCase):
         self.assertEqual(why, "NOT_ARMED")
 
     def test_kill_switch_blocks(self):
+        # KILL 파일 채널 트리거 (F12 채널은 이 세션에서 감지 불가 — 실측 확인)
+        import os
+        kf = self.ctl.kill.kill_file
+        os.makedirs(os.path.dirname(kf), exist_ok=True)
+        open(kf, "w").write("stop")
+        self.ctl.kill._file_triggered = True
         self.ctl.kill._event.set()
         ok, why = self.ctl.act(0)
         self.assertFalse(ok)
-        self.assertEqual(why, "KILL_SWITCH")
+        self.assertTrue(why.startswith("KILL_SWITCH"))
         self.ctl.kill._event.clear()
+        if os.path.exists(kf):
+            os.remove(kf)
 
     def test_stay_action_no_key(self):
         with mock.patch.object(self.ctl, "_tap") as tap:
