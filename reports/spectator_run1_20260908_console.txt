@@ -1,0 +1,42 @@
+# spectator 1차 보스전 관전 — 콘솔 타임라인 회수 (proc_2e7c923eb9d0, 2026-09-08 10:46:35 시작)
+# v2.7 파서 + v7 정책 + Practice 모드 실전. JSON은 비정상 종료(exit 1, ~210s)로 유실 — 구 코드 종료시 일괄저장 구조 탓.
+# 증분 저장 패치로 재발 방지 완료. 아래는 Discord 종료 통보에서 회수한 마지막 1972자 (앞부분 0~40s 잘림).
+[ 40s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[ 45s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[ 50s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[ 55s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[ 60s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[ 65s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[ 70s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[ 75s] waiting  kill=False
+[ 80s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[ 85s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[ 90s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[ 95s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[100s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[105s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[110s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[115s] bossfight act=9 policy=v7 gate=NOT_ARMED kill=False
+[120s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[125s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[130s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[135s] bossfight act=9 policy=v7 gate=NOT_ARMED kill=False
+[140s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[145s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[150s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[155s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[160s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[165s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[170s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[175s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[180s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[185s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[190s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[195s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[200s] waiting  kill=False
+[205s] waiting  kill=False
+[210s] waiting  kill=False
+
+# 요약: 보스전 판정 40s~195s 연속(단절 1회 75s) ≈ 전투 2분35초.
+# v7 결정 총 33회(5s 샘플): act=6 우세(29), act=2(5), act=9 HARVEST(2: 115s/135s).
+# gate=NOT_ARMED 전 구간 — 관전 모드 키 미발화 정상. kill=False (킬스위치 미사용).
