@@ -1,0 +1,47 @@
+[
+ {
+  "step": 0,
+  "key": "LEFT",
+  "act": 0,
+  "fired": true,
+  "gate": "move_left_0.10s",
+  "diff": 6698870,
+  "moved": true
+ },
+ {
+  "step": 1,
+  "key": "RIGHT",
+  "act": 8,
+  "fired": true,
+  "gate": "move_right_0.26s",
+  "diff": 6604759,
+  "moved": true
+ },
+ {
+  "step": 2,
+  "key": "LEFT",
+  "act": 0,
+  "fired": true,
+  "gate": "move_left_0.10s",
+  "diff": 6481983,
+  "moved": true
+ },
+ {
+  "step": 3,
+  "key": "RIGHT",
+  "act": 8,
+  "fired": true,
+  "gate": "move_right_0.26s",
+  "diff": 6524573,
+  "moved": true
+ },
+ {
+  "step": 4,
+  "key": "LEFT",
+  "act": 0,
+  "fired": true,
+  "gate": "move_left_0.10s",
+  "diff": 6642812,
+  "moved": true
+ }
+]
