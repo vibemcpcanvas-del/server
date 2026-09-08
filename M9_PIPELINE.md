@@ -138,3 +138,10 @@ DXCam 캡처(60fps) → FeatureExtractor(7차원) → L1 PPO 추론(2ms) → Pri
   구동 가드, --record AI EYE 영상 통합. 처리 루프 1.45ms/프레임@30fps(예산 4.3%).
   테스트 119 OK. 보고서: reports/WORKFLOW_REFIT_REPORT_20260908.md.
   **현재 위치: R5 재구동(정비본) → R6**
+- 2026-09-08: **R4/R5 확장 + 로컬 비전 사이클 1 (ca0288a, 8567e81)** — Moonlight/Sunshine
+  원격 세션 대응: 포커스 게이트에 Sunshine TCP 세션 판정 추가, BetterCam 캡처 소스 신설,
+  run_live_agent mock 폐지(실기기 DDA 기본, 82스텝 스모크). YOLO 자동 사이클 1 완주:
+  보스전 녹화 4280장 자동라벨→YOLOv8n 10에포크(CPU 25분)→mAP50 0.569, 추론 22.6ms.
+  라벨 오염 패턴 문서화(탑 붉은 장식 12% 등) → 스킬 yolo-auto-train으로 순환 절차화.
+  MCP 도입: deepwiki/hugging_face 등록 완료(테스트 통과, 세션 재시작 후 도구 주입).
+  **현재 위치: R6 (실전 --arm) — 사용자 허가 대기**
