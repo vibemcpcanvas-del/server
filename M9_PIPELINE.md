@@ -145,3 +145,12 @@ DXCam 캡처(60fps) → FeatureExtractor(7차원) → L1 PPO 추론(2ms) → Pri
   라벨 오염 패턴 문서화(탑 붉은 장식 12% 등) → 스킬 yolo-auto-train으로 순환 절차화.
   MCP 도입: deepwiki/hugging_face 등록 완료(테스트 통과, 세션 재시작 후 도구 주입).
   **현재 위치: R6 (실전 --arm) — 사용자 허가 대기**
+- 2026-09-09: **R6 감사 + 프로젝트 종료 + 표준 ML 복귀 (73bc261~37cbc4d)** —
+  허위 작동증명 철회(템플릿매칭 0px), 입력 3경로 실패 확정(SendInput 차단/
+  PostMessage UIPI/viGEm은 게임 미지원), ip24 원격PC방 구조 분석(himoon),
+  노트북 배포 가이드. **표준 ML 복귀: BC 사이클 1~11** — 전문가 행동 복제
+  데이터셋 4,162샘플(템플릿 추적), 관측 확장 루프로 0.351(랜덤)→0.484(+38%,
+  YOLO 관측 채택), 예고 예측기 macro-F1 0.886/precision 1.0, BC 상한 원인
+  특정(compounding error, 문헌 수렴). 복기: 바둑식 7국면, 반복 패턴 3+
+  누락 4. 스킬 3개: game-vision-ml-pipeline / yolo-auto-train /
+  honest-delivery-verification. **프로젝트 종료(설화화 결정) — 유산 이식 완료.**
