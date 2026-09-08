@@ -24,6 +24,19 @@ import mss
 
 from core.vision.real_parser_v2 import parse_frame
 from core.input_controller import InputController
+from core.observation_bridge import ObservationBridge
+
+MODEL_PATH = r"artifacts_verus_curriculum\verus_curriculum_v7_balanced.zip"
+
+
+def load_policy():
+    """v7 정책 로드. 실패 시 None (휴리스틱 폴백)."""
+    try:
+        from stable_baselines3 import PPO
+        return PPO.load(MODEL_PATH, device="cpu")
+    except Exception as e:
+        print("v7 로드 실패 — 휴리스틱 폴백:", e)
+        return None
 
 
 def restore_window(hwnd: int):
@@ -111,10 +124,18 @@ def main():
     ctl.kill.start()
     ctl.arm(args.arm)
 
-    region = {"left": 0, "top": 0, "width": 1024, "height": 768}
+    # 클라이언트 영역 캡처 (창 위치 자동 추적) + v7 정책 + 관측 브리지
+    l, t, r, b = win32gui.GetClientRect(args.hwnd)
+    pt = win32gui.ClientToScreen(args.hwnd, (l, t))
+    region = {"left": pt[0], "top": pt[1], "width": r, "height": b}
+    print("capture region:", region)
+    model = load_policy()
+    bridge = ObservationBridge()
+    policy_name = "v7" if model is not None else "heuristic"
+
     log = []
     n = args.seconds * args.fps
-    print(f"=== 관전 모드 {args.seconds}s | arm={args.arm} | "
+    print(f"=== 관전 모드 {args.seconds}s | arm={args.arm} | policy={policy_name} | "
           f"kill file: {ctl.kill.kill_file} ===")
     with mss.mss() as sct:
         for i in range(n):
@@ -124,7 +145,14 @@ def main():
             obs = obs_from_parse(res)
             entry = {"t": round(time.time() - t0, 3), "is_bossfight": res.get("is_bossfight", False)}
             if obs is not None:
-                action = heuristic_action(obs)
+                vec = bridge.push(res)   # 60차원 관측 (스택 유지)
+                if model is not None and vec is not None:
+                    action, _ = model.predict(vec, deterministic=True)
+                    action = int(action)
+                    entry["policy"] = "v7"
+                else:
+                    action = heuristic_action(obs)
+                    entry["policy"] = "heuristic"
                 fired, why = ctl.act(action)
                 entry.update({"obs": obs, "action": action,
                               "fired": fired, "gate": why})
@@ -134,7 +162,7 @@ def main():
             if i % (args.fps * 5) == 0:
                 k = "bossfight" if obs else "waiting"
                 print(f"[{i // args.fps:3d}s] {k} "
-                      f"{('act=' + str(entry.get('action')) + ' gate=' + entry.get('gate', '-')) if obs else ''} "
+                      f"{('act=' + str(entry.get('action')) + ' policy=' + entry.get('policy', '-') + ' gate=' + entry.get('gate', '-')) if obs else ''} "
                       f"kill={ctl.kill.is_set()}")
             # 킬스위치 걸리면 즉시 종료
             if ctl.kill.is_set():
