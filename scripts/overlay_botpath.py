@@ -83,6 +83,11 @@ def main():
     frame_bytes = W * H * 3
     trail: deque[tuple[float, float]] = deque(maxlen=TRAIL)
     boss_hist: deque[tuple[float, float]] = deque(maxlen=BOSS_TRAIL)
+    # 위치 지속성 — 파서가 한 객체를 놓친 프레임에도 마커 유지 (다중객체 렌더 보장)
+    # YOLO 도입 전 임시 완화: 마지막 실측 위치를 최대 1.5초(45프레임)까지 유지
+    last_pos = {"player": None, "boss": None}      # (x, y)
+    stale = {"player": 0, "boss": 0}               # 지속 프레임 수
+    STALE_MAX = 45
     written = 0
     i = 0
     while True:
@@ -104,6 +109,23 @@ def main():
         py = res.get("player_y") if res.get("player_found") else None
         bx = res.get("boss_x") if res.get("boss_found") else None
         by = res.get("boss_y") if res.get("boss_found") else None
+
+        # 위치 지속성: 실측 성공 시 갱신, 실패 시 마지막 위치 유지(STALE_MAX 내)
+        for key, val in (("player", None if px is None else (px, py)),
+                         ("boss", None if bx is None else (bx, by))):
+            if val is not None:
+                last_pos[key] = val
+                stale[key] = 0
+            else:
+                stale[key] += 1
+                if last_pos[key] is not None and stale[key] <= STALE_MAX:
+                    val = last_pos[key]
+                    if key == "player":
+                        px, py = val
+                    else:
+                        bx, by = val
+                else:
+                    last_pos[key] = None
 
         if px is not None and py is not None:
             trail.append((float(px), float(py)))
