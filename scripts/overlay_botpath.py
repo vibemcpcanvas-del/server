@@ -36,6 +36,7 @@ DST = os.path.join(BASE, "reports", "aieye_botpath_full.mp4")
 
 W, H, FPS = 1366, 768, 30
 TRAIL = 45  # 1.5초
+BOSS_TRAIL = 30  # 1초 — 보스 이동 방향 화살표용
 
 ACT_COLOR = {  # BGR
     "L": (255, 160, 0),      # 파랑 계열 — 좌 레인 이동
@@ -81,6 +82,7 @@ def main():
 
     frame_bytes = W * H * 3
     trail: deque[tuple[float, float]] = deque(maxlen=TRAIL)
+    boss_hist: deque[tuple[float, float]] = deque(maxlen=BOSS_TRAIL)
     written = 0
     i = 0
     while True:
@@ -105,6 +107,8 @@ def main():
 
         if px is not None and py is not None:
             trail.append((float(px), float(py)))
+        if bx is not None and by is not None:
+            boss_hist.append((float(bx), float(by)))
 
         # 근접 위협선
         if px is not None and bx is not None:
@@ -126,6 +130,56 @@ def main():
             cv2.circle(frame, (int(bx), int(by)), pulse, (0, 0, 255), 2, cv2.LINE_AA)
             cv2.putText(frame, "BOSS", (int(bx) - 24, int(by) - pulse - 6),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 60, 255), 2)
+            # 보스 추적 화살표 3개: ①이동방향(과거→현재) ②봇→보스 조준 ③화면 인디케이터
+            if len(boss_hist) >= 8:
+                # ① 보스 이동 방향 화살표 (마커 위쪽, 진행 방향)
+                (x_old, y_old), (x_new, y_new) = boss_hist[0], boss_hist[-1]
+                dx, dy = x_new - x_old, y_new - y_old
+                if (dx * dx + dy * dy) > 60:  # 유의미한 이동만
+                    L = 60.0
+                    n = (dx * dx + dy * dy) ** 0.5
+                    ux, uy = dx / n, dy / n
+                    tip = (int(bx + ux * (pulse + L)), int(by - pulse - 14))
+                    tail = (int(bx + ux * (pulse + 8)), int(by - pulse - 6))
+                    cv2.arrowedLine(frame, tail, tip, (0, 0, 255), 3,
+                                    cv2.LINE_AA, tipLength=0.35)
+                    v_speed = n / max(1, len(boss_hist)) * FPS / 10  # px/s (대략)
+                    cv2.putText(frame, f"{v_speed:.0f}", (tip[0] + 8, tip[1] + 4),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 80, 255), 2)
+            # ② 봇→보스 조준선 (마젠타 점선 + 삼각형 조준 헤드)
+            if px is not None and (written % 8) < 4:  # 점선 깜빡임
+                ddx, ddy = bx - px, by - py
+                d = (ddx * ddx + ddy * ddy) ** 0.5
+                if d > 40:
+                    ux, uy = ddx / d, ddy / d
+                    # 점선 (시작을 보스 쪽으로 60px 물려 화면 덮임 방지)
+                    st_x, st_y = px + ux * 22, py + uy * 22
+                    en_x, en_y = bx - ux * (pulse + 10), by - uy * (pulse + 10)
+                    seg = 14
+                    gap = 10
+                    total = 0.0
+                    while total < d - 60:
+                        a = total / d
+                        p1 = (int(st_x + ux * total), int(st_y + uy * total))
+                        total2 = min(total + seg, d - 60)
+                        p2 = (int(st_x + ux * total2), int(st_y + uy * total2))
+                        cv2.line(frame, p1, p2, (255, 0, 255), 2, cv2.LINE_AA)
+                        total += seg + gap
+                    # 조준 헤드 (보스 바로 앞 작은 삼각형)
+                    hx, hy = bx - ux * (pulse + 8), by - uy * (pulse + 8)
+                    p1 = (int(hx - uy * 7), int(hy + ux * 7))
+                    p2 = (int(hx + uy * 7), int(hy - ux * 7))
+                    p3 = (int(bx - ux * (pulse + 2)), int(by - uy * (pulse + 2)))
+                    pts = np.array([p1, p2, p3], dtype=np.int32)
+                    cv2.fillPoly(frame, [pts], (255, 0, 255))
+            # ③ 화면 상단 보스 방향 인디케이터 (보스가 화면 밖/멀리 있을 때 유용)
+            if px is not None:
+                ddx = bx - px
+                if abs(ddx) > 500:
+                    ind_x = W - 40 if ddx > 0 else 40
+                    dir_char = ">>" if ddx > 0 else "<<"
+                    cv2.putText(frame, dir_char, (ind_x - 20, 70),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
 
         # 봇(플레이어) 마커 — 행동 색 + 방향 화살표
         if px is not None:
