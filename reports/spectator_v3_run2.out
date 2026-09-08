@@ -1,0 +1,103 @@
+capture region: (268, 112, 1634, 880) (1366x768)
+=== 관전 모드 v3 1800s @ 30fps | arm=False | policy=v7 | kill file: C:\Users\ROCmAdmin\Desktop\KILL ===
+[  0s] waiting  kill=False
+[  5s] waiting  kill=False
+[ 10s] waiting  kill=False
+[ 15s] waiting  kill=False
+[ 20s] waiting  kill=False
+[ 25s] waiting  kill=False
+[ 30s] waiting  kill=False
+[ 35s] waiting  kill=False
+[ 40s] waiting  kill=False
+[ 45s] waiting  kill=False
+[ 50s] waiting  kill=False
+[ 55s] waiting  kill=False
+[ 60s] waiting  kill=False
+[ 65s] waiting  kill=False
+[ 70s] waiting  kill=False
+[ 75s] waiting  kill=False
+[ 80s] waiting  kill=False
+[ 85s] waiting  kill=False
+[ 90s] waiting  kill=False
+[ 95s] waiting  kill=False
+[100s] waiting  kill=False
+[105s] waiting  kill=False
+[110s] waiting  kill=False
+[115s] waiting  kill=False
+[120s] waiting  kill=False
+[125s] waiting  kill=False
+[130s] waiting  kill=False
+[135s] waiting  kill=False
+[140s] waiting  kill=False
+[145s] waiting  kill=False
+[150s] waiting  kill=False
+[155s] waiting  kill=False
+[160s] waiting  kill=False
+[165s] waiting  kill=False
+[170s] bossfight  kill=False
+*** 보스전 시작 확정 (150프레임 연속) — 자동종료 무장
+[175s] bossfight  kill=False
+[180s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[185s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[190s] bossfight  kill=False
+[195s] bossfight act=9 policy=v7 gate=NOT_ARMED kill=False
+[200s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[205s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[210s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[215s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[220s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[225s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[230s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[235s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[240s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[245s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[250s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[255s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[260s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[265s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[270s] bossfight  kill=False
+[275s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[280s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[285s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[290s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[295s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[300s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[305s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[310s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[315s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[320s] bossfight  kill=False
+[325s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[330s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[335s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[340s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[345s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[350s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[355s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[360s] bossfight  kill=False
+[365s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[370s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[375s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[380s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[385s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[390s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[395s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[400s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[405s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[410s] bossfight act=2 policy=v7 gate=NOT_ARMED kill=False
+[415s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[420s] bossfight  kill=False
+[425s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[430s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[435s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[440s] bossfight  kill=False
+[445s] bossfight  kill=False
+[450s] bossfight act=6 policy=v7 gate=NOT_ARMED kill=False
+[455s] waiting  kill=False
+[460s] waiting  kill=False
+
+=== 종료 (bossfight_ended) ===
+프레임 13930 | 보스전 판정 8562 | 행동 결정 7696
+평균 지연: parse 6.32ms + bridge 0.05ms + infer 0.39ms = 계산 9.79ms/프레임
+캡처: 27809회 성공, 오류 0회
+로그: reports/spectator_v3_run2.jsonl + reports/spectator_v3_run2.json
+영상: reports/spectator_v3_run2_aieye.mp4 (13930프레임)
