@@ -130,4 +130,11 @@ DXCam 캡처(60fps) → FeatureExtractor(7차원) → L1 PPO 추론(2ms) → Pri
 - 2026-09-06: 마일스톤 구체화 문서 작성.
 - 2026-09-06: **R0 완료** — venv 구축, 테스트 44/44 OK. 진힐라 실측 코어(verus_hilla) 신규 작성. 스프라이트 794+287개 추출(MapleLib). 보스 정체 교정(8880410=진힐라). WSL2 ROCm 진단 완료(커널 실행 segfault, 드라이버 업데이트 대기). **현재 위치: R1 (Colab artifacts 회수)**
 - 2026-09-07: **v2 PM 납품 완료** — 결함 5건 수정(제단 스폰 연결/죽음 규칙 green==0/Soul Split 타이머/관측 altar_direction+can_interact/커리큘럼 HP 스윕·시드). 10단계 훈련(WSL2 ROCm GPU, 770 steps/s). 최종 v7: 실조건 생존 512.7/900, **정화 6.42 (v1은 0.00, 목표 3)**, 제단 등장 50/50. 테스트 99/99. 커밋 270a6c2. 모델 verus_curriculum_v7_balanced.zip. 리포트 reports/V2_DELIVERY_REPORT.md. 교훈: 통합 경로 끊김은 프로브 스크립트로만 발견 가능(99 테스트가 못 잡음).
-- 2026-09-08: **R2 v2.7 + R5 v7 브리지 완성** — 관측 브리지 60차원(1b26c05), 관전모드 v7 연결+클라이언트 캡처 추적(f4699e4), 라이브 실측으로 Practice 판별+이중 레이아웃(cbe28b1). 5분 관전 1차 구동은 구버전 파서로 무판정 — v2.7로 재구동 대기. **현재 위치: R5 재구동 → R6**
+- 2026-09-08: **R5 재구동 + 워크플로우 정비 (8884c2e)** — 1차 구동은 전투 2분35초 관전
+  성공했으나 JSON 일괄저장 구조 탓 비정상 종료 시 유실(콘솔 타임라인만 회수:
+  reports/spectator_run1_20260908_console.txt, v7 act=6 우세+HARVEST 2회+NOT_ARMED 정상).
+  정비: 캡처 mss→bettercam DDA(16.7ms→0.24ms 실측 70배), 캡처/처리 스레드 분리
+  (latest-wins), JSONL 프레임 단위 증분 기록, 보스전 종료 자동 감지 종료, O_EXCL 이중
+  구동 가드, --record AI EYE 영상 통합. 처리 루프 1.45ms/프레임@30fps(예산 4.3%).
+  테스트 119 OK. 보고서: reports/WORKFLOW_REFIT_REPORT_20260908.md.
+  **현재 위치: R5 재구동(정비본) → R6**
