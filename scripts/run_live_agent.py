@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, r"C:\Users\ROCmAdmin\Desktop\test\server")
 
 import numpy as np
 from stable_baselines3 import PPO
@@ -11,7 +14,6 @@ from stable_baselines3.common.env_util import make_vec_env
 
 from env.jin_hilla_gym_env import JinHillaScenarioGymEnv
 from env.jin_hilla_live_vision_env import JinHillaVisionObservationWrapper
-from env.jin_hilla_live_vision_env import SyntheticScreenSource
 from core.priority_arbiter import PriorityArbiter, Action
 from core.vision_schema import BossBattleState
 
@@ -19,19 +21,23 @@ from core.vision_schema import BossBattleState
 def run_live_agent(
     model_path: str = "artifacts_m8_sb3_ppo/ppo_m8_policy.zip",
     stats_path: str = "artifacts_m8_sb3_ppo/vec_normalize.pkl",
-    use_mock: bool = True,
+    use_mock: bool = False,
     duration_sec: int = 10,
 ) -> None:
     print("[M9 Agent] 로컬 실시간 제어 에이전트 초기화 중...")
 
     # 1. 화면 캡처 소스 구성
+    # v3 (2026-09-08): mock 기본 폐지 — 실기기 BetterCam(Desktop Duplication)이 기본.
+    # Moonlight/Sunshine 원격 세션도 같은 화면을 캡처하므로 별도 분기 불필요.
+    # SyntheticScreenSource는 tests/ 전용 픽스처로 격하 (라이브 실행 금지).
     if use_mock:
-        print("[M9 Agent] 합성 시뮬레이션 화면 소스(SyntheticScreenSource) 구동")
-        screen_source = SyntheticScreenSource()
-    else:
-        print("[M9 Agent] Windows DirectX 고속 화면 캡처(DXCam) 구동")
-        from core.vision.screen_source import DXCamScreenSource
-        screen_source = DXCamScreenSource()
+        raise SystemExit(
+            "[M9 Agent] --mock은 라이브 실행에서 제거됨 (실입력 계층 전환 완료). "
+            "합성 화면은 tests/ 픽스처만 사용. 실기기 캡처로 실행하세요."
+        )
+    print("[M9 Agent] Windows Desktop Duplication 고속 화면 캡처(BetterCam) 구동")
+    from core.vision.screen_source_bettercam import BetterCamScreenSource
+    screen_source = BetterCamScreenSource()
 
     # 2. Gymnasium 표준 Wrapper 환경 빌드
     def make_live_env():
@@ -103,7 +109,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="artifacts_m8_sb3_ppo/ppo_m8_policy.zip")
     parser.add_argument("--stats", default="artifacts_m8_sb3_ppo/vec_normalize.pkl")
-    parser.add_argument("--mock", action="store_true", default=True)
+    parser.add_argument("--mock", action="store_true", default=False)
     parser.add_argument("--duration", type=int, default=5)
     args = parser.parse_args()
 

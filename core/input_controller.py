@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import subprocess
 import threading
 import time
 from typing import Callable
@@ -129,8 +130,40 @@ class InputController:
             self.release_all()
 
     def game_has_focus(self) -> bool:
+        """게임(또는 그 스트림 세션)이 입력을 받을 상태인가.
+
+        Moonlight(원격 스트리밍) 환경 고려 — Sunshine 호스트가 입력을
+        SendInput으로 OS 레벨에 주입하므로, 스트림 세션 동안에는
+        게임 창이 실제 포그라운드로 보고되지 않을 수 있다(전경이
+        스트림 뷰어/데스크톱일 수 있음). 이 경우 Sunshine 세션 활성
+        여부로 포커스를 대체 판정한다.
+        """
         try:
-            return win32gui.GetForegroundWindow() == self.hwnd
+            if win32gui.GetForegroundWindow() == self.hwnd:
+                return True
+        except Exception:
+            pass
+        return self.stream_session_active()
+
+    @staticmethod
+    def stream_session_active() -> bool:
+        """Sunshine(스트리밍 호스트)에 활성 클라이언트 세션이 있는지 확인.
+
+        Sunshine은 세션 활성 시 /api/apps 같은 HTTP 상태를 노출하며,
+        프로세스 기준으로는 sunshine이 실행 중이면 스트림 가능 상태다.
+        실제 '세션 중' 판정: sunshine 프로세스 존재 + netstat에
+        클라이언트 연결(47989/47990 포트)이 ESTABLISHED인지 검사.
+        """
+        try:
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-NetTCPConnection -OwningProcess "
+                 "(Get-Process sunshine -ErrorAction SilentlyContinue).Id "
+                 "-State Established -ErrorAction SilentlyContinue | "
+                 "Measure-Object | Select-Object -ExpandProperty Count"],
+                capture_output=True, text=True, timeout=10)
+            n = int(r.stdout.strip() or 0)
+            return n > 0
         except Exception:
             return False
 
