@@ -1,0 +1,15 @@
+{
+ "n_wrong": 246,
+ "types": {
+  "LEFT->STAY": 113,
+  "RIGHT->STAY": 71,
+  "LEFT->RIGHT": 6,
+  "STAY->LEFT": 19,
+  "RIGHT->LEFT": 32,
+  "STAY->RIGHT": 5
+ },
+ "wrong_dist_mean": 243.64878048780488,
+ "correct_dist_mean": 285.14758064516127,
+ "wrong_r0": 123,
+ "wrong_r1p": 123
+}
