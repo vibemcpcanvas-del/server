@@ -363,11 +363,13 @@ def main():
 
     logger = JsonlLogger(args.out)
     n = args.seconds * args.fps
-    # 보스전 종료 자동 감지: 2초 연속 비보스전 + 보스전 경험 후
+    # 보스전 종료 자동 감지: 10초 연속 비보스전 + 진짜 보스전(5초 연속) 경험 후
     autostop = not args.autostop_off
     seen_boss = False
+    boss_streak = 0
     nonboss_streak = 0
-    AUTOSTOP_FRAMES = args.fps * 2
+    AUTOSTOP_FRAMES = args.fps * 10
+    MIN_BOSS_FRAMES = args.fps * 5
 
     print(f"=== 관전 모드 v3 {args.seconds}s @ {args.fps}fps | arm={args.arm} | "
           f"policy={policy_name} | kill file: {ctl.kill.kill_file} ===")
@@ -390,19 +392,29 @@ def main():
                 lat["parse"] += time.perf_counter() - t0
                 entry["is_bossfight"] = bool(res.get("is_bossfight", False))
 
-                # 보스전 종료 자동 감지
+                # 보스전 종료 자동 감지.
+                # v2 교훈: 입장 UI 일러스트가 HP바로 오검출될 수 있어
+                # "보스전 최소 MIN_BOSS_FRAMES 연속 지속"일 때만 무장한다.
                 if autostop:
                     if entry["is_bossfight"]:
-                        seen_boss = True
+                        boss_streak += 1
                         nonboss_streak = 0
-                    elif seen_boss:
-                        nonboss_streak += 1
-                        if nonboss_streak >= AUTOSTOP_FRAMES:
-                            end_reason = "bossfight_ended"
-                            logger.append(entry)
-                            if rec is not None:
-                                rec.write(frame, entry)
-                            break
+                        if boss_streak >= MIN_BOSS_FRAMES:
+                            if not seen_boss:
+                                print(f"*** 보스전 시작 확정 ({boss_streak}프레임 연속) — 자동종료 무장")
+                            seen_boss = True
+                    else:
+                        boss_streak = 0
+                        if seen_boss:
+                            nonboss_streak += 1
+                            if nonboss_streak >= AUTOSTOP_FRAMES:
+                                end_reason = "bossfight_ended"
+                                logger.append(entry)
+                                if rec is not None:
+                                    rec.write(frame, entry)
+                                break
+                        else:
+                            nonboss_streak = 0
 
                 obs = obs_from_parse(res)
                 if obs is not None:
