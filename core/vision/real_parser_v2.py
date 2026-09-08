@@ -16,8 +16,10 @@ import numpy as np
 
 BASE_W, BASE_H = 1366, 768
 
-# ── 고정 UI 관심영역 (기준 해상도 상대좌표) ──
-ROI_SKULLS = (600, 88, 766, 118)      # x0,y0,x1,y1
+# ── 고정 UI 관심영역 (1366x768 클라이언트 캡처 기준) ──
+# 2026-09-07 실보스전 실측: 해골 캡슐이 남은시간 우측 x795..965, y30..75에 위치
+# (구 레이아웃 x600..765는 이전 패치 — 폐기)
+ROI_SKULLS = (795, 30, 965, 75)       # x0,y0,x1,y1
 ROI_TIMER = (640, 126, 726, 152)
 ROI_BOSS_HP = (270, 2, 1090, 14)
 PLAY_AREA = (0, 120, 1366, 660)       # 플레이 영역 (UI 제외)
@@ -30,50 +32,84 @@ def _hsv(img: np.ndarray) -> np.ndarray:
 
 
 def detect_is_bossfight(img: np.ndarray) -> bool:
-    """보스 HP바(핑크) 존재 → 보스전 화면."""
+    """보스전 판별 — HP바 또는 해골 캡슐 존재.
+
+    v2.6: Practice 모드는 보스 HP바가 없음 → 해골 캡슐(3클래스 해골 2개 이상
+    관측)으로도 보스전 판정. HP바가 있으면 즉시 True.
+    """
+    # 1차: 보스 HP바 (핑크 풀폭)
     x0, y0, x1, y1 = ROI_BOSS_HP
     roi = img[y0:y1, x0:x1]
     h = _hsv(roi)
-    # 핑크/마젠타 계열 바
     pink = cv2.inRange(h, (140, 60, 120), (175, 255, 255))
     red = cv2.inRange(h, (0, 60, 120), (10, 255, 255))
     frac = (pink.sum() + red.sum()) / 255.0 / ((x1 - x0) * (y1 - y0))
-    return frac > 0.25
+    if frac > 0.25:
+        return True
+    # 2차: 해골 캡슐 (신규 ROI에서 실제 관측 해골 2개 이상 — 파괴만 있으면 빈 프레임)
+    sk = _detect_skulls_fixed(img)
+    return sk["skulls_seen"] >= 2
 
 
 def detect_skulls(img: np.ndarray) -> dict:
-    """해골 5슬롯 3클래스 — 하이브리드 (v2.5).
+    """해골 5슬롯 3클래스 — 삼중 경로 (v2.7).
 
-    UI 레이아웃은 패치/창모드에 따라 바뀜(실측: 해골이 남은시간 하단↔우측 이동).
-    - 두 경로(고정 ROI / 동적 타이머앵커+피크)를 모두 돌리고,
-    - 판정이 크게 다르면(차이 >=3슬롯) '블롭 피크 5개 + y 일관성'을 가진
-      동적 결과를 신뢰한다 (고정 ROI는 레이아웃이 바뀌면 엉뚱한 곳을 읽음).
-    - 근소 차이(<=2슬롯)면 GT 95/95 검증된 고정 경로 유지.
+    실측된 두 레이아웃을 모두 지원:
+    ① 신규 ROI(795..965, y30..75) — 2026-09-07 실보스전 레이아웃
+    ② 구 ROI(600..765, y88..118) — 이전 패치 레이아웃 (GT 95/95)
+    관측 픽셀이 많은 쪽을 신뢰 (레이아웃 자동 판별).
+    3클래스 판정: 핑크 H150..180&S>=150 / 초록 H25..62&V>=100&V_med>=96 / 파괴=나머지
     """
-    fixed = _detect_skulls_fixed(img)
-    # 동적 경로 트리거: 고정 ROI 위치에 해골이 '실제로 없는' 경우만.
-    # 판별: 고정 ROI 밴드(y88..118, x600..766) 안에 초록+핑크 픽셀이 거의 없으면
-    # 레이아웃이 이동한 것(신규 UI는 해골이 남은시간 우측 y30..75에 위치).
-    x0, y0, x1, y1 = ROI_SKULLS
-    band = img[y0:y1, x0:x1]
-    hs_band = _hsv(band)
-    g_in = int(cv2.inRange(hs_band, (35, 90, 120), (60, 255, 255)).sum()) // 255
-    p_in = int(cv2.inRange(hs_band, (150, 140, 120), (180, 255, 255)).sum()) // 255
-    if g_in + p_in > 130:
-        return fixed   # 고정 위치에 해골 존재 → 검증된 경로
-    dyn = _detect_skulls_dynamic(img)
-    if dyn is None:
-        return fixed
-    diff = (abs(fixed["green_skulls"] - dyn["green_skulls"])
-            + abs(fixed["red_skulls"] - dyn["red_skulls"])
-            + abs(fixed["skulls_destroyed"] - dyn["skulls_destroyed"]))
-    if diff >= 3 and dyn.get("skull_slots") == 5 and dyn.get("peaks_y_std", 99) < 15:
-        return dyn
-    return fixed
+    new = _detect_skulls_fixed(img)                       # 신규 ROI
+    old_roi_img = _shift_legacy(img)                      # 구 ROI 영역 크롭+스케일
+    old = _detect_skulls_fixed_on(old_roi_img) if old_roi_img is not None else None
+
+    new_seen = new["skulls_seen"]
+    old_seen = old["skulls_seen"] if old else 0
+    if old_seen > new_seen:
+        return old
+    return new
+
+
+def _shift_legacy(img: np.ndarray) -> np.ndarray | None:
+    """구 레이아웃 ROI(600..765, y88..118) 크롭 — 그대로 반환(좌표 동일 해상도 가정)."""
+    ch, cw = img.shape[:2]
+    if cw < 766 or ch < 119:
+        return None
+    return img[88:118, 600:766]
+
+
+def _detect_skulls_fixed_on(roi: np.ndarray) -> dict:
+    """주어진 ROI 크롭에서 5슬롯 3클래스 판정 (규칙 공유)."""
+    w = roi.shape[1] / 5.0
+    green = red = destroyed = 0
+    for i in range(5):
+        s = roi[:, int(i * w):int((i + 1) * w)]
+        hs = _hsv(s)
+        pink_px = int(cv2.inRange(hs, (150, 150, 100), (180, 255, 255)).sum()) // 255
+        v = hs[:, :, 2]
+        vmask = v > 60
+        v_med = float(np.median(v[vmask])) if vmask.sum() > 20 else 0.0
+        h_med = float(np.median(hs[:, :, 0][vmask])) if vmask.sum() > 20 else 0.0
+        if pink_px >= 100:
+            red += 1
+        elif 25 <= h_med <= 62 and v_med >= 96:
+            green += 1
+        else:
+            destroyed += 1
+    return {"green_skulls": green, "red_skulls": red,
+            "skulls_destroyed": destroyed, "skulls_seen": green + red,
+            "skull_slots": 5, "layout": "legacy"}
 
 
 def _detect_skulls_dynamic(img: np.ndarray) -> dict | None:
-    """동적 경로: 타이머 앵커 + 블롭 피크 (레이아웃 변형 대응). 실패 시 None."""
+    """동적 경로: 타이머 앵커 + 블롭 피크 (레이아웃 변형 대응). 실패 시 None.
+
+    v2.6 판정 규칙 (라이브 실측):
+      r(핑크): H150..180 & S>=150 & V>=100
+      g(초록): H25..62 & S>=140 & V>=100
+      d(파괴): 위 어느 것도 아님 (무채색·어두움)
+    """
     ch, cw = img.shape[:2]
     y1 = int(ch * 0.12)
     strip = img[0:y1, :]
@@ -104,11 +140,11 @@ def _detect_skulls_dynamic(img: np.ndarray) -> dict | None:
     timer_cx = wa + wwin // 2
 
     # 해골 블롭 피크 5개 직접 탐지: 스무딩한 히스토그램에서 국소 최대치.
-    # 탐색 범위 ±22%폭 (실측: 해골 중심은 타이머 중심 +50~+130px — HP게이지 등
-    # 좌측 초록 요소를 배제하려면 좁게)
+    # 탐색 범위 타이머 중심 ±22%폭 (실측: 해골 5개는 타이머 옆 200px에 밀집,
+    # 첫 해골이 타이머보다 왼쪽인 케이스도 커버)
     kernel = np.ones(int(cw * 0.01) | 1, dtype=float)
     smooth = np.convolve(cols, kernel / kernel.sum(), mode="same")
-    lo = min(cw - 10, timer_cx + int(cw * 0.015))
+    lo = max(0, timer_cx - int(cw * 0.22))
     hi = min(cw, timer_cx + int(cw * 0.22))
     if hi - lo < 60:
         return _detect_skulls_fixed(img)
@@ -133,10 +169,11 @@ def _detect_skulls_dynamic(img: np.ndarray) -> dict | None:
         spacing = int(cw * 0.045)
     half = max(14, spacing // 2)
     # 판정 밴드: 각 피크의 y 중심(해골 블롭 y위치) ±22px — UI 프레임 테두리 제외
+    # y밴드는 g_mask(초록) 기준 — 핑크 마스크는 남은시간 텍스트 오염 가능 (74s 실측)
     band_ys = []
     peak_ys = []
     for cx in peaks[:5]:
-        colband = skull_mask[:, max(0, cx - 15):cx + 15]
+        colband = g_mask[:, max(0, cx - 15):cx + 15]
         ys = np.where(colband.sum(axis=1) > 30)[0]
         by0 = int(ys.min()) if len(ys) else 20
         by1 = int(ys.max()) if len(ys) else 70
@@ -151,13 +188,16 @@ def _detect_skulls_dynamic(img: np.ndarray) -> dict | None:
         by1 = min(strip.shape[0], by1 + 3)
         slot = strip[by0:by1, max(0, cx - half):cx + half]
         shs = _hsv(slot)
-        pink_px = int(cv2.inRange(shs, (160, 170, 140), (180, 255, 255)).sum()) // 255
+        # r(핑크): 고채도 마젠타 (라이브 실측 S 191~198)
+        pink_px = int(cv2.inRange(shs, (150, 150, 100), (180, 255, 255)).sum()) // 255
         v = shs[:, :, 2]
-        vmask = v > 40
+        vmask = v > 60
         v_med = float(np.median(v[vmask])) if vmask.sum() > 20 else 0.0
+        h_med = float(np.median(hs_slot_h(shs, vmask))) if vmask.sum() > 20 else 0.0
+        s_med = float(np.median(hs_slot_s(shs, vmask))) if vmask.sum() > 20 else 0.0
         if pink_px >= 100:
             red += 1
-        elif v_med >= 96.0:
+        elif 25 <= h_med <= 95 and v_med >= 100:
             green += 1
         else:
             destroyed += 1
@@ -168,29 +208,19 @@ def _detect_skulls_dynamic(img: np.ndarray) -> dict | None:
             "timer_cx": timer_cx, "layout": "dynamic"}
 
 
+def hs_slot_h(hsv_slot: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    return hsv_slot[:, :, 0][mask]
+
+
+def hs_slot_s(hsv_slot: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    return hsv_slot[:, :, 1][mask]
+
+
 def _detect_skulls_fixed(img: np.ndarray) -> dict:
-    """구 레이아웃(1366x768 고정 ROI) 폴백 — GT 95/95 검증된 경로."""
+    """신규 레이아웃 ROI(795..965, y30..75) — 라이브 실측 기반."""
     x0, y0, x1, y1 = ROI_SKULLS
     roi = img[y0:y1, x0:x1]
-    w = roi.shape[1] / 5.0
-    green = red = destroyed = 0
-    for i in range(5):
-        s = roi[:, int(i * w):int((i + 1) * w)]
-        hs = _hsv(s)
-        pink = cv2.inRange(hs, (160, 150, 120), (180, 255, 255))
-        pink_px = int(pink.sum()) // 255
-        v = hs[:, :, 2]
-        vmask = v > 40
-        v_med = float(np.median(v[vmask])) if vmask.sum() > 20 else float(v.mean())
-        if pink_px >= 100:
-            red += 1
-        elif v_med >= 96.0:
-            green += 1
-        else:
-            destroyed += 1
-    return {"green_skulls": green, "red_skulls": red,
-            "skulls_destroyed": destroyed, "skulls_seen": green + red,
-            "skull_slots": 5}
+    return _detect_skulls_fixed_on(roi)
 
 
 def detect_soul_split(img: np.ndarray) -> dict:

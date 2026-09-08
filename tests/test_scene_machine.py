@@ -89,6 +89,7 @@ class TestSceneMachine(unittest.TestCase):
 
 class TestBossFightDetector(unittest.TestCase):
     def test_black_frame_not_bossfight(self):
+        """검은 프레임: 해골도 HP바도 없으면 보스전 아님 (v2.7: 해골 캡슐 2차 판별)."""
         frame = np.zeros((768, 1366, 3), dtype=np.uint8)
         ok, _ = detect_boss_fight(frame)
         self.assertFalse(ok)
